@@ -63,6 +63,8 @@ textarea{resize:vertical;min-height:80px}
 .place .top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
 .place .acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .place .acts button{min-height:40px;font-size:.88rem}
+.btnlink{display:flex;align-items:center;justify-content:center;min-height:40px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:600 .88rem var(--font);text-decoration:none;padding:0 10px}
+.btnlink.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .bk{font-size:.75rem;color:var(--muted);display:flex;align-items:center;gap:6px}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
 .dot.ok{background:var(--good)} .dot.warn{background:var(--marigold)} .dot.err{background:var(--bad)}
@@ -694,7 +696,18 @@ $("#tCopy").addEventListener("change",()=>{
 function tripDays(t){ if(!t.start||!t.end) return []; const out=[]; let d=new Date(t.start+"T00:00:00"); const e=new Date(t.end+"T00:00:00");
   for(let i=0;d<=e&&i<60;i++){ out.push(new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)); d.setDate(d.getDate()+1);} return out; }
 const dayLabel=(t,iso)=>{ const i=tripDays(t).indexOf(iso); return i>=0?`Day ${i+1} · ${shortDate(iso)}`:(iso?shortDate(iso):"Any day"); };
-const omLink=p=>`om://map?v=1&ll=${p.lat},${p.lng}&n=${encodeURIComponent(p.name)}&appname=Trip%20Ledger`;
+/* Organic Maps share link (same encoding as the app's own "Share" links): opens Organic Maps if installed, else the omaps.app page. */
+const B64="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+function ge0Code(lat,lon,zoom){
+  const M=(1<<30)-1, lx=(lat+90)/180*M, latI=lx<0?0:(lx>M?M:Math.round(lx));
+  const l180=lon>=0?((lon+180)%360)-180:(()=>{const l=((lon-180)%360)+180;return l<180?l:l-360;})();
+  const ox=(l180+180)/360*(M+1)+0.5, lonI=(ox<=0||ox>=M+1)?0:Math.floor(ox);
+  let s=B64[zoom<=4?0:(zoom>=19.75?63:Math.floor((zoom-4)*4))];
+  for(let i=0,sh=27;i<9;i++,sh-=3){const a=latI>>sh&7,b=lonI>>sh&7; s+=B64[(a>>2&1)<<5|(b>>2&1)<<4|(a>>1&1)<<3|(b>>1&1)<<2|(a&1)<<1|(b&1)];}
+  return s;
+}
+const omName=n=>[...String(n).replace(/[ _]/g,c=>c===" "?"_":" ")].map(ch=>{const c=ch.charCodeAt(0);return (c<0x20||c===0x7f||' <>#%"!*\'();:@&=+$,/?[]{}\\|^`'.includes(ch))?"%"+c.toString(16).toUpperCase().padStart(2,"0"):ch;}).join("");
+const omLink=p=>`https://omaps.app/${ge0Code(p.lat,p.lng,16)}/${omName(p.name)}`;
 const gmLink=p=>`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving`;
 function parseCoords(s){
   s=(s||"").trim(); let m;
@@ -715,7 +728,7 @@ function renderPlaces(t){
   return `<div class="card" style="display:flex;flex-direction:column;gap:8px">
       <details ${pins.length?"":"open"}><summary style="font-weight:600;cursor:pointer;min-height:32px">Offline maps and navigation: how it works</summary>
       <p class="note" style="margin:8px 0 0">Install <b>Organic Maps</b> (free on the App Store) and, on Wi-Fi before you go, download the regions you need (the states or regions your trip covers). It then shows the map, your position and turn-by-turn directions with no signal. Each region you download stays on the phone, so you can keep many.</p>
-      <p class="note" style="margin:0">Tap <b>Navigate</b> on a place to open it there, then tap "Route to". To load every place of this trip into Organic Maps as its own list, use <b>Send all to Organic Maps</b>.</p></details>
+      <p class="note" style="margin:0">Tap <b>Navigate</b> on a place to open it in Organic Maps, then tap "Route to". If Organic Maps isn't installed, Navigate opens its web page instead. To load every place of this trip into Organic Maps as its own list, use <b>Send all to Organic Maps</b>.</p></details>
       <button id="plImport" class="warm">Import places from Excel, CSV or KML</button>
       ${missing?`<button id="plFindAll" class="primary">Find ${missing} missing location${missing===1?"":"s"} (needs internet)</button>`:""}
       <button id="kmlBtn" ${pins.length-missing?"":"disabled"}>Send all to Organic Maps (${pins.length-missing} places)</button>
@@ -726,7 +739,7 @@ function renderPlaces(t){
         <div class="m note"><span class="tag">${esc(p.type||"Sight")}</span>${esc(p.note||"")}</div>
         ${!hasLoc(p)?`<div class="note" style="color:var(--bad)">No location yet</div>`:p.geo?`<div class="note">Matched: ${esc(p.geo)}. Check it's right; tap Edit to pick another.</div>`:""}</div>
         <button class="ghost" data-pedit="${esc(p.id)}" style="min-height:36px;padding:4px 8px">Edit</button></div>
-        ${hasLoc(p)?`<div class="acts"><button class="primary" data-om="${esc(p.id)}">Navigate</button><button data-gm="${esc(p.id)}">Google Maps</button></div>`:`<div class="acts"><button class="warm" data-pedit="${esc(p.id)}">Add location</button><span></span></div>`}</div>`; }).join("")}</div>`
+        ${hasLoc(p)?`<div class="acts"><a class="btnlink primary" href="${esc(omLink(p))}" target="_blank" rel="noopener">Navigate</a><a class="btnlink" href="${esc(gmLink(p))}" target="_blank" rel="noopener">Google Maps</a></div>`:`<div class="acts"><button class="warm" data-pedit="${esc(p.id)}">Add location</button><span></span></div>`}</div>`; }).join("")}</div>`
     :`<div class="card empty"><h3>${pins.length?"No places on this day":"No places yet"}</h3><p>Import your plan from Excel (one row per place), or tap + Place. Saved places work offline.</p></div>`}`;
 }
 function openPlace(p){

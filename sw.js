@@ -1,5 +1,5 @@
 // Trip Ledger offline cache. Bump VERSION when you upload a new index.html.
-const VERSION = "tripledger-v4";
+const VERSION = "tripledger-v5";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png", "xlsx.mini.min.js"];
 
 self.addEventListener("install", e => {
