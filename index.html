@@ -112,6 +112,11 @@ dialog::backdrop{background:rgb(10 20 28 / .5)}
 .choices{display:flex;flex-direction:column;gap:6px}
 .choices label{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--ink);font-size:.95rem}
 .choices input{width:20px;height:20px;min-height:0;flex:none}
+.scanbtns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.scanbtns button{padding:8px 4px;font-size:.82rem;min-height:44px}
+#billPreview{max-height:160px;max-width:100%;object-fit:contain;border-radius:8px;border:1px solid var(--line);align-self:flex-start}
+.progress{height:6px;border-radius:3px;background:var(--surface);overflow:hidden;border:1px solid var(--line)}
+.progress>div{height:100%;width:0;background:var(--marigold);transition:width .2s}
 .scanbox{border:1px dashed var(--marigold);background:var(--marigold-soft);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
 .prow{display:grid;grid-template-columns:minmax(0,1fr) 70px 44px;gap:8px;align-items:center}
 .mrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px;gap:8px;align-items:center}
@@ -149,8 +154,18 @@ dialog::backdrop{background:rgb(10 20 28 / .5)}
     <div class="body">
       <div class="scanbox" id="scanBox">
         <strong>Read a bill</strong>
-        <span class="note">Tap the box below, then <b>Scan Text</b> (camera icon on the iPhone keyboard menu) and point at the bill, or paste text you copied from a photo, PDF, SMS or email. It is read on this phone only.</span>
-        <textarea id="billText" rows="4" placeholder="Bill or payment message text"></textarea>
+        <div class="scanbtns">
+          <button type="button" class="warm" id="scanCam">Take photo</button>
+          <button type="button" class="warm" id="scanPic">Choose photo</button>
+          <button type="button" class="warm" id="scanFile">Choose file (PDF)</button>
+        </div>
+        <input type="file" id="inCam" accept="image/*" capture="environment" hidden>
+        <input type="file" id="inPic" accept="image/*" hidden>
+        <input type="file" id="inFile" accept="application/pdf,.pdf,image/*" hidden>
+        <img id="billPreview" alt="Bill being read" hidden>
+        <div class="progress" id="scanProg" hidden><div></div></div>
+        <span class="note">Read on this phone only, no internet needed. Or paste text from an SMS or email below.</span>
+        <textarea id="billText" rows="4" placeholder="Bill text appears here, or paste a payment SMS"></textarea>
         <div class="bar-row"><button type="button" class="warm" id="readBtn">Fill from text</button><span class="note" id="scanMsg" aria-live="polite"></span></div>
       </div>
       <div class="form">
@@ -589,9 +604,57 @@ function openExp(e,focusScan){
   $("#scanBox").hidden=!!e&&!focusScan;
   const del=$("#expDelete"); del.hidden=!e; del.textContent="Delete expense"; del.dataset.armed="";
   updateSplitInfo(); $("#expDlg").showModal();
-  if(focusScan) setTimeout(()=>$("#billText").focus(),50);
+  $("#billPreview").hidden=true; $("#scanProg").hidden=true;
 }
-$("#readBtn").onclick=()=>{
+/* ---- read bills from photos and PDFs on the phone (offline) ---- */
+let ocrWorker=null, busy=false;
+function loadScript(src){ return new Promise((ok,no)=>{ if(document.querySelector(`script[src="${src}"]`)) return ok(); const s=document.createElement("script"); s.src=src; s.onload=ok; s.onerror=()=>no(new Error("load")); document.head.append(s); }); }
+function prog(f,msg){ $("#scanProg").hidden=f==null; if(f!=null) $("#scanProg").firstElementChild.style.width=Math.round(f*100)+"%"; if(msg) $("#scanMsg").textContent=msg; }
+async function getOcr(){
+  if(ocrWorker) return ocrWorker;
+  await loadScript("ocr/tesseract.min.js");
+  ocrWorker=await Tesseract.createWorker("eng",1,{workerPath:"ocr/worker.min.js",corePath:"ocr/core",langPath:"ocr/lang",gzip:true,workerBlobURL:false,
+    logger:m=>{ if(m.status==="recognizing text") prog(.15+.85*m.progress,`Reading the bill… ${Math.round(m.progress*100)}%`); else if(/load/.test(m.status||"")) prog(.08,"Getting the reader ready (first time takes a few seconds)…"); }});
+  return ocrWorker;
+}
+function toCanvas(img,maxSide=2000){ const k=Math.min(1,maxSide/Math.max(img.width||img.naturalWidth,img.height||img.naturalHeight));
+  const c=document.createElement("canvas"); c.width=Math.round((img.width||img.naturalWidth)*k); c.height=Math.round((img.height||img.naturalHeight)*k);
+  const g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height); g.filter="grayscale(1) contrast(1.25)"; g.drawImage(img,0,0,c.width,c.height); return c; }
+function loadImg(file){ return new Promise((ok,no)=>{ const u=URL.createObjectURL(file); const im=new Image(); im.onload=()=>ok({im,u}); im.onerror=()=>no(new Error("img")); im.src=u; }); }
+async function ocrCanvas(c){ const w=await getOcr(); const {data}=await w.recognize(c); return data.text||""; }
+async function pdfText(file){
+  await loadScript("pdf/pdf.min.js"); pdfjsLib.GlobalWorkerOptions.workerSrc="pdf/pdf.worker.min.js";
+  const doc=await pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise; let out="";
+  for(let i=1;i<=Math.min(doc.numPages,3);i++){ const pg=await doc.getPage(i); const tc=await pg.getTextContent(); let lastY=null;
+    for(const it of tc.items){ const y=it.transform?Math.round(it.transform[5]):null; if(lastY!==null&&y!==null&&Math.abs(y-lastY)>3) out+="\n"; else if(out&&!out.endsWith("\n")) out+=" "; out+=it.str; lastY=y; }
+    out+="\n"; }
+  if(out.replace(/\s/g,"").length>=20) return {text:out};
+  const pg=await doc.getPage(1); const vp=pg.getViewport({scale:2.2}); const c=document.createElement("canvas"); c.width=vp.width; c.height=vp.height;
+  await pg.render({canvasContext:c.getContext("2d"),viewport:vp}).promise; return {canvas:c};
+}
+async function readFile(file){
+  if(!file||busy) return; busy=true; $("#scanMsg").textContent=""; prog(.03,"Opening…");
+  try{
+    let text="";
+    if(/pdf$/i.test(file.type)||/\.pdf$/i.test(file.name)){
+      $("#billPreview").hidden=true; const r=await pdfText(file);
+      if(r.text){ text=r.text; } else { prog(.1,"Scanned PDF, reading the page…"); $("#billPreview").src=r.canvas.toDataURL("image/jpeg",.6); $("#billPreview").hidden=false; text=await ocrCanvas(r.canvas); }
+    } else {
+      const {im,u}=await loadImg(file); $("#billPreview").src=u; $("#billPreview").hidden=false;
+      text=await ocrCanvas(toCanvas(im));
+    }
+    text=text.replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
+    if(!text){ prog(null,"Couldn't find any text. Try a sharper, well-lit photo, flat and filling the frame."); return; }
+    $("#billText").value=text; prog(null); fillFromText();
+  }catch(e){ prog(null, e.message==="load"?"The bill reader isn't on this phone yet. Open the app once with internet, then try again.":"Couldn't read that file. Try a photo of the bill instead."); }
+  finally{ busy=false; }
+}
+for(const [btn,inp] of [["#scanCam","#inCam"],["#scanPic","#inPic"],["#scanFile","#inFile"]]){
+  $(btn).onclick=()=>$(inp).click();
+  $(inp).onchange=ev=>{ const f=ev.target.files[0]; ev.target.value=""; readFile(f); };
+}
+$("#readBtn").onclick=()=>fillFromText();
+function fillFromText(){
   const txt=$("#billText").value.trim(); if(!txt){$("#scanMsg").textContent="Scan or paste the bill text first.";return;}
   const r=parseBill(txt); const got=[];
   if(r.amount){$("#fAmount").value=r.amount;got.push("amount");}
@@ -600,7 +663,7 @@ $("#readBtn").onclick=()=>{
   $("#fCat").value=r.category; if(!$("#fNotes").value) $("#fNotes").value="From bill: "+txt.replace(/\s+/g," ").slice(0,200);
   updateSplitInfo();
   $("#scanMsg").textContent=got.length?`Found ${got.join(", ")}. Check them before saving.`:"Couldn't find an amount. Enter it by hand.";
-};
+}
 $("#expForm").addEventListener("submit",ev=>{
   ev.preventDefault(); const t=cur(); const amt=parseFloat($("#fAmount").value); const fa=formAlloc();
   if(!$("#fDesc").value.trim()){$("#expErr").textContent="Add a short description.";return;}

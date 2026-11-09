@@ -1,0 +1,1 @@
+Bundled third-party libraries (Apache-2.0 / MIT): tesseract.js 5.1.1, tesseract.js-core 5.1.1, tesseract.js eng data (MIT), pdf.js 3.11.174, SheetJS xlsx 0.18.5.
