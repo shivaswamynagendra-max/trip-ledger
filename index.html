@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Trip Ledger</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Trip Ledger">
+<meta name="theme-color" content="#1d6f86">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+/* Mobile-first ledger: sticky top bar with trip picker, summary tiles, segmented tabs, card list, floating Add button. */
+:root{
+  --bg:#eef2f3; --surface:#fff; --surface-2:#f5f7f8; --ink:#142233; --muted:#5a6a73; --line:#d6dee1;
+  --accent:#1d6f86; --accent-ink:#fff; --accent-soft:#dcedf2; --marigold:#b97d0c; --marigold-soft:#fbefd4;
+  --good:#1f7a4a; --bad:#b4322b;
+  --font:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  --mono:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root{
+  --bg:#0e171e; --surface:#15212b; --surface-2:#1b2934; --ink:#e4ecef; --muted:#93a5ae; --line:#2a3b47;
+  --accent:#55b6cf; --accent-ink:#0b1a22; --accent-soft:#173947; --marigold:#f0b440; --marigold-soft:#3a2e14;
+  --good:#5cc78f; --bad:#f08a80; color-scheme:dark }}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--font)}
+body{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)} .note{font-size:.82rem;color:var(--muted)}
+.label{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+h1,h2,h3{margin:0;letter-spacing:-.01em} h1{font-size:1.2rem} h2{font-size:1.25rem} h3{font-size:1rem}
+button{font:600 .95rem var(--font);border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 14px;min-height:44px;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.warm{background:var(--marigold-soft);border-color:var(--marigold)}
+.danger{color:var(--bad);border-color:var(--bad)}
+.ghost{background:transparent;border-color:transparent;color:var(--accent)}
+input,select,textarea{font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:44px;width:100%;min-width:0}
+textarea{resize:vertical;min-height:80px}
+
+.bar{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--line);
+  padding:calc(10px + env(safe-area-inset-top,0px)) max(16px, env(safe-area-inset-right,0px)) 10px max(16px, env(safe-area-inset-left,0px));
+  display:flex;flex-direction:column;gap:8px}
+.bar-row{display:flex;gap:8px;align-items:center}
+.bar-row select{flex:1}
+.wrap{max-width:760px;margin:0 auto;padding:14px max(16px, env(safe-area-inset-right,0px)) 0 max(16px, env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px}
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:640px){.tiles{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.tile{background:var(--surface-2);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tile .v{font-family:var(--mono);font-size:1.15rem;font-weight:600;overflow-wrap:anywhere}
+.tile .s{font-size:.78rem;color:var(--muted)}
+.people{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.pill{font-size:.78rem;padding:2px 10px;border-radius:999px;background:var(--accent-soft)}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.chips button{flex:none;min-height:36px;padding:6px 12px;border-radius:999px;font-size:.85rem;font-weight:500}
+.chips button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.place{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.place .top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.place .acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.place .acts button{min-height:40px;font-size:.88rem}
+.bk{font-size:.75rem;color:var(--muted);display:flex;align-items:center;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.dot.ok{background:var(--good)} .dot.warn{background:var(--marigold)} .dot.err{background:var(--bad)}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px}
+.seg button{border:none;background:transparent;min-height:38px;padding:6px 2px;font-size:.82rem;color:var(--muted)}
+.seg button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgb(0 0 0 / .12)}
+.filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media (max-width:480px){.filters{grid-template-columns:1fr 1fr}.filters select:first-child{grid-column:1 / -1}}
+.list{display:flex;flex-direction:column;gap:8px}
+.exp{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:left;width:100%;font-weight:400}
+.exp .d{font-weight:600;overflow-wrap:anywhere}
+.exp .a{font-family:var(--mono);font-weight:600;text-align:right}
+.exp .m{font-size:.8rem;color:var(--muted);overflow-wrap:anywhere}
+.exp .ph{font-family:var(--mono);font-size:.78rem;color:var(--muted);text-align:right}
+.tag{font-size:.7rem;padding:1px 7px;border-radius:6px;border:1px solid var(--line);background:var(--surface-2);margin-right:4px}
+.daylabel{font-size:.78rem;font-weight:600;color:var(--muted);margin-top:6px}
+.sumrow{display:flex;justify-content:space-between;font-weight:600;padding:4px 2px}
+.bars{display:flex;flex-direction:column;gap:10px}
+.barrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;font-size:.9rem}
+.barrow .track{grid-column:1 / -1;height:8px;border-radius:4px;background:var(--surface-2);overflow:hidden}
+.barrow .fill{height:100%;background:var(--accent);border-radius:4px}
+.barrow .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tbl{overflow-x:auto} table{border-collapse:collapse;width:100%;font-size:.88rem}
+th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left} th{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.r{text-align:right} .pos{color:var(--good)} .neg{color:var(--bad)}
+.settle{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.settle li{background:var(--surface-2);border-radius:10px;padding:10px 12px}
+.empty{text-align:center;padding:28px 12px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.empty p{margin:0;color:var(--muted);max-width:40ch}
+.fab{position:fixed;right:max(16px, env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));display:flex;gap:8px;z-index:6}
+.fab button{box-shadow:0 4px 14px rgb(0 0 0 / .18);min-height:52px;padding:0 18px;border-radius:26px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:.9rem;z-index:20;max-width:calc(100vw - 32px)}
+
+/* sheets */
+dialog{border:none;padding:0;background:var(--surface);color:var(--ink);width:100%;max-width:640px;max-height:100dvh;height:100dvh;margin:0 auto}
+@media (min-width:700px){dialog{height:auto;max-height:calc(100dvh - 40px);border-radius:16px;margin:auto}}
+dialog::backdrop{background:rgb(10 20 28 / .5)}
+.sheet{display:flex;flex-direction:column;height:100%;max-height:inherit}
+.sheet header{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;border-bottom:1px solid var(--line)}
+.sheet .body{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:14px;-webkit-overflow-scrolling:touch}
+.sheet footer{display:flex;gap:8px;justify-content:space-between;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form label,.fl{display:flex;flex-direction:column;gap:4px;font-size:.82rem;color:var(--muted);min-width:0}
+.form .full{grid-column:1 / -1}
+.choices{display:flex;flex-direction:column;gap:6px}
+.choices label{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--ink);font-size:.95rem}
+.choices input{width:20px;height:20px;min-height:0;flex:none}
+.scanbox{border:1px dashed var(--marigold);background:var(--marigold-soft);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.prow{display:grid;grid-template-columns:minmax(0,1fr) 70px 44px;gap:8px;align-items:center}
+.mrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px;gap:8px;align-items:center}
+.x{padding:0;width:44px;color:var(--muted)}
+.menu{display:flex;flex-direction:column;gap:8px}
+.menu button{text-align:left}
+.menu p{margin:0 0 4px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="bar">
+  <div class="bar-row">
+    <div style="flex:1;min-width:0"><h1>Trip Ledger</h1><button type="button" class="bk ghost" id="bkStatus" style="min-height:0;padding:0;font-weight:400"><span class="dot"></span><span>Backup off</span></button></div>
+    <button class="ghost" id="menuBtn" aria-label="Menu">Share & backup</button>
+  </div>
+  <div class="bar-row">
+    <select id="tripSel" aria-label="Trip"></select>
+    <button id="newTrip" aria-label="New trip">+ Trip</button>
+  </div>
+</div>
+
+<main class="wrap" id="view"></main>
+
+<div class="fab" id="fab" hidden>
+  <button class="warm" id="fabScan">Read bill</button>
+  <button class="primary" id="fabAdd">+ Expense</button>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<!-- Expense sheet -->
+<dialog id="expDlg">
+  <form class="sheet" id="expForm" method="dialog">
+    <header><button type="button" class="ghost" data-close>Cancel</button><h2 id="expTitle">Add expense</h2><button type="submit" class="ghost" style="font-weight:700">Save</button></header>
+    <div class="body">
+      <div class="scanbox" id="scanBox">
+        <strong>Read a bill</strong>
+        <span class="note">Tap the box below, then <b>Scan Text</b> (camera icon on the iPhone keyboard menu) and point at the bill, or paste text you copied from a photo, PDF, SMS or email. It is read on this phone only.</span>
+        <textarea id="billText" rows="4" placeholder="Bill or payment message text"></textarea>
+        <div class="bar-row"><button type="button" class="warm" id="readBtn">Fill from text</button><span class="note" id="scanMsg" aria-live="polite"></span></div>
+      </div>
+      <div class="form">
+        <label>Date<input type="date" id="fDate" required></label>
+        <label><span>Amount (<span id="fCur">INR</span>)</span><input type="number" id="fAmount" min="0" step="0.01" inputmode="decimal" required></label>
+        <label class="full">Description<input type="text" id="fDesc" required placeholder="e.g. Dinner at the hotel"></label>
+        <label>Place<input type="text" id="fLoc" list="locList" placeholder="e.g. Mysuru"></label>
+        <label>Category<select id="fCat"></select></label>
+        <label class="full">Paid by<select id="fPaid"></select></label>
+        <div class="full fl">Allocate to
+          <div class="choices">
+            <label><input type="radio" name="alloc" value="all" checked> Everyone, equally per person</label>
+            <label><input type="radio" name="alloc" value="some"> Selected families</label>
+            <label><input type="radio" name="alloc" value="one"> One family or person</label>
+          </div>
+          <div class="choices" id="fSplit" hidden></div>
+          <select id="fCharge" aria-label="Charge to" hidden></select>
+          <span class="note" id="splitInfo"></span>
+        </div>
+        <label class="full">Vendor<input type="text" id="fMerchant" placeholder="optional"></label>
+        <label class="full">Notes<textarea id="fNotes" rows="2" placeholder="optional"></textarea></label>
+      </div>
+      <datalist id="locList"></datalist>
+      <span class="note" id="expErr" role="alert" style="color:var(--bad)"></span>
+      <button type="button" class="danger" id="expDelete" hidden>Delete expense</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Trip sheet -->
+<dialog id="tripDlg">
+  <form class="sheet" id="tripForm" method="dialog">
+    <header><button type="button" class="ghost" data-close>Cancel</button><h2 id="tripTitle">New trip</h2><button type="submit" class="ghost" style="font-weight:700">Save</button></header>
+    <div class="body">
+      <label class="fl" id="copyWrap">Start with people from<select id="tCopy"></select></label>
+      <div class="form">
+        <label class="full">Trip name<input type="text" id="tName" required placeholder="e.g. Goa, Dec 2026"></label>
+        <label>Start<input type="date" id="tStart"></label>
+        <label>End<input type="date" id="tEnd"></label>
+        <label>Currency<select id="tCur"><option>INR</option><option>USD</option><option>EUR</option><option>GBP</option><option>AED</option><option>SGD</option><option>THB</option></select></label>
+        <label>Places<input type="text" id="tPlaces" placeholder="Panaji, Calangute"></label>
+      </div>
+      <div class="fl"><span class="label">Families (cost is shared by head-count)</span>
+        <div id="pRows" class="list"></div>
+        <button type="button" id="addP">Add family</button>
+      </div>
+      <div class="fl"><span class="label">Adults who pay or are charged</span>
+        <span class="note">Link each adult to their family so what they pay counts for that family.</span>
+        <div id="mRows" class="list"></div>
+        <button type="button" id="addM">Add adult</button>
+      </div>
+      <span class="note" id="tripErr" role="alert" style="color:var(--bad)"></span>
+      <button type="button" class="danger" id="tripDelete" hidden>Delete trip</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Menu sheet -->
+<dialog id="menuDlg">
+  <div class="sheet">
+    <header><span></span><h2>Share & backup</h2><button type="button" class="ghost" data-close>Done</button></header>
+    <div class="body">
+      <div class="menu">
+        <p class="label">This trip</p>
+        <button id="mReport">Send report (WhatsApp, Messages…)</button>
+        <button id="mCsv">Export expenses as CSV</button>
+        <button id="mImport">Import expenses CSV into this trip</button>
+        <p class="note">Import a CSV exported from Trip Ledger on another phone (for example, a friend's). Rows already here are skipped.</p>
+        <p class="label" style="margin-top:10px">Automatic backup</p>
+        <p class="note" id="bkInfo"></p>
+        <button id="mBkSetup">Set up automatic backup</button>
+        <button id="mBkNow" hidden>Back up now</button>
+        <p class="label" style="margin-top:10px">All data</p>
+        <button id="mAllCsv">Export all trips as CSV</button>
+        <button id="mBackup">Save full backup</button>
+        <button id="mRestore">Restore from backup</button>
+        <p class="note" id="storeNote">Everything is stored only on this phone. Save a backup now and then (to Files or iCloud Drive), and before changing phones.</p>
+      </div>
+      <input type="file" id="importFile" accept=".csv,text/csv,text/plain" hidden>
+      <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+    </div>
+  </div>
+</dialog>
+
+<!-- Place sheet -->
+<dialog id="placeDlg">
+  <form class="sheet" id="placeForm" method="dialog">
+    <header><button type="button" class="ghost" data-close>Cancel</button><h2 id="placeTitle">Add place</h2><button type="submit" class="ghost" style="font-weight:700">Save</button></header>
+    <div class="body">
+      <div class="form">
+        <label class="full">Name<input type="text" id="plName" required placeholder="e.g. Sela Lake"></label>
+        <label class="full">Location
+          <input type="text" id="plLoc" placeholder="27.5098, 92.1009  or paste a Google Maps link">
+        </label>
+        <div class="full bar-row"><button type="button" id="plHere">Use where I am now</button><span class="note" id="plMsg" aria-live="polite"></span></div>
+        <label>Day<select id="plDay"></select></label>
+        <label>Type<select id="plType"><option>Sight</option><option>Stay</option><option>Food</option><option>Fuel</option><option>Transport</option><option>Other</option></select></label>
+        <label class="full">Note<input type="text" id="plNote" placeholder="optional, e.g. entry 7:30 am"></label>
+      </div>
+      <span class="note">In Google Maps, tap and hold a spot, then copy the coordinates at the top. A shared Google Maps link also works if it contains the coordinates.</span>
+      <span class="note" id="placeErr" role="alert" style="color:var(--bad)"></span>
+      <button type="button" class="danger" id="placeDelete" hidden>Delete place</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Backup sheet -->
+<dialog id="bkDlg">
+  <form class="sheet" id="bkForm" method="dialog">
+    <header><button type="button" class="ghost" data-close>Cancel</button><h2>Automatic backup</h2><span style="width:60px"></span></header>
+    <div class="body">
+      <p class="note" style="margin:0">After every change, while you're online, Trip Ledger locks your data with your passphrase and saves it to your <b>private</b> GitHub repository. Nobody, including GitHub, can read it without the passphrase. Each save is kept as a version, so you can go back.</p>
+      <div class="form">
+        <label class="full">Private repository (owner/name)<input type="text" id="bkRepo" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="your-username/trip-ledger-data"></label>
+        <label class="full">GitHub access token<input type="password" id="bkToken" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="github_pat_…"></label>
+        <label class="full">Backup passphrase<input type="password" id="bkPass" autocomplete="new-password" placeholder="at least 8 characters"></label>
+        <label class="full">Passphrase again<input type="password" id="bkPass2" autocomplete="new-password"></label>
+      </div>
+      <p class="note" style="margin:0"><b>Write the passphrase down.</b> If it's lost, the backup can't be opened by anyone.</p>
+      <span class="note" id="bkErr" role="alert" style="color:var(--bad)"></span>
+      <button type="button" class="primary" id="bkConnect">Connect and back up this phone</button>
+      <button type="button" id="bkRestore">Restore from this backup (new phone / reinstall)</button>
+      <button type="button" class="danger" id="bkOff" hidden>Turn off automatic backup</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+const KEY="tripledger.v1";
+const CATS=["Flights","Cab & transport","Fuel","Stay","Food","Activities & tickets","Permits & fees","Shopping","Tips","Other"];
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const uid=p=>(p||"")+(crypto.randomUUID?crypto.randomUUID().slice(0,8):Math.random().toString(36).slice(2,10));
+const sym=c=>({INR:"₹",USD:"$",EUR:"€",GBP:"£",AED:"AED ",SGD:"S$",THB:"฿"}[c]||(c?c+" ":"₹"));
+const money=(n,c="INR",dp=0)=>sym(c)+Number(n||0).toLocaleString(c==="INR"?"en-IN":"en-US",{minimumFractionDigits:dp,maximumFractionDigits:dp});
+const fmtDate=d=>{if(!d)return"—";const x=new Date(d+"T00:00:00");return isNaN(x)?d:x.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});};
+const shortDate=d=>{if(!d)return"No date";const x=new Date(d+"T00:00:00");return isNaN(x)?d:x.toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"});};
+const todayISO=()=>{const d=new Date();return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);};
+
+/* ---------- storage (this phone only) ---------- */
+function seed(){ return {trips:[],expenses:[],current:"__all",pinsSeeded:true}; }
+function load(){ try{ const d=JSON.parse(localStorage.getItem(KEY)); if(d&&Array.isArray(d.trips)) return d; }catch{} return seed(); }
+let D=load(); let storageOk=true;
+function save(){ try{ D.savedAt=Date.now(); localStorage.setItem(KEY,JSON.stringify(D)); storageOk=true; }catch{ storageOk=false; toast("Couldn't save on this phone. Free some space, then try again."); } if(typeof queueBackup==="function") queueBackup(); }
+save();
+if(navigator.storage?.persist) navigator.storage.persist().catch(()=>{});
+
+const UI={tab:"expenses",filters:{loc:"",cat:"",payer:""},editExp:null,editTrip:null};
+const tripOf=id=>D.trips.find(t=>t.id===id);
+const cur=()=>tripOf(D.current)||D.trips[0];
+const expOf=id=>D.expenses.filter(e=>e.tripId===id);
+const sum=a=>a.reduce((s,e)=>s+(Number(e.amount)||0),0);
+const heads=t=>(t.participants||[]).reduce((s,p)=>s+(Number(p.count)||0),0);
+const days=t=>{if(!t.start||!t.end)return null;const n=Math.round((new Date(t.end)-new Date(t.start))/864e5)+1;return n>0?n:null;};
+
+function toast(msg){ const el=$("#toast"); el.textContent=msg; el.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,2800); }
+
+/* ---------- share maths ---------- */
+const membersOf=t=>t.members||[];
+const famIds=t=>(t.participants||[]).map(p=>p.id);
+function entityOf(t,id){const m=membersOf(t).find(m=>m.id===id);return (m&&m.family&&famIds(t).includes(m.family))?m.family:id;}
+function nameOf(t,id){return (t.participants||[]).find(p=>p.id===id)?.name||membersOf(t).find(m=>m.id===id)?.name||"—";}
+function entities(t){
+  const fam=(t.participants||[]).map(p=>({id:p.id,name:p.name,count:Number(p.count)||0}));
+  const solo=membersOf(t).filter(m=>!(m.family&&famIds(t).includes(m.family))).map(m=>({id:m.id,name:m.name,count:1,solo:true}));
+  return [...fam,...solo];
+}
+function splitOf(e,t){
+  const ps=t.participants||[];
+  if(e.alloc==="one"&&e.chargeTo){
+    const m=membersOf(t).find(m=>m.id===e.chargeTo);
+    if(m) return {mode:"one",alloc:[{id:entityOf(t,m.id),w:1}],heads:1,label:m.name};
+    const p=ps.find(p=>p.id===e.chargeTo);
+    if(p) return {mode:"one",alloc:[{id:p.id,w:1}],heads:Number(p.count)||0,label:p.name};
+  }
+  let ids=(e.alloc==="some")?(e.splitAmong||[]).filter(id=>ps.some(p=>p.id===id)):ps.map(p=>p.id);
+  if(!ids.length) ids=ps.map(p=>p.id);
+  const alloc=ids.map(id=>({id,w:Number(ps.find(p=>p.id===id)?.count)||0}));
+  const h=alloc.reduce((s,a)=>s+a.w,0); const all=ids.length===ps.length;
+  return {mode:all?"all":"some",alloc,heads:h,label:all?"Everyone":ids.map(id=>nameOf(t,id)).join(" + ")};
+}
+function balances(t){
+  const rows=Object.fromEntries(entities(t).map(p=>[p.id,{p,paid:0,share:0}]));
+  for(const e of expOf(t.id)){
+    const amt=Number(e.amount)||0; const payer=entityOf(t,e.paidBy); if(rows[payer]) rows[payer].paid+=amt;
+    const {alloc}=splitOf(e,t); const w=alloc.reduce((s,a)=>s+a.w,0); if(!w) continue;
+    for(const a of alloc) if(rows[a.id]) rows[a.id].share+=amt*a.w/w;
+  }
+  return Object.values(rows).map(r=>({...r,bal:r.paid-r.share}));
+}
+function settleUp(rows){
+  const cred=rows.filter(r=>r.bal>0.5).map(r=>({n:r.p.name,v:r.bal})).sort((a,b)=>b.v-a.v);
+  const debt=rows.filter(r=>r.bal<-0.5).map(r=>({n:r.p.name,v:-r.bal})).sort((a,b)=>b.v-a.v);
+  const out=[];let i=0,j=0;
+  while(i<debt.length&&j<cred.length){const x=Math.min(debt[i].v,cred[j].v);out.push({from:debt[i].n,to:cred[j].n,v:x});debt[i].v-=x;cred[j].v-=x;if(debt[i].v<0.5)i++;if(cred[j].v<0.5)j++;}
+  return out;
+}
+function groupBy(list,key){const m=new Map();for(const e of list){const k=key(e)||"Unspecified";m.set(k,(m.get(k)||0)+(Number(e.amount)||0));}return [...m.entries()].sort((a,b)=>b[1]-a[1]);}
+function bars(entries,c){
+  if(!entries.length) return `<p class="note">Nothing yet.</p>`;
+  const max=Math.max(...entries.map(e=>e[1]))||1;
+  return `<div class="bars">${entries.map(([k,v])=>`<div class="barrow"><span class="n">${esc(k)}</span><span class="num">${money(v,c)}</span><div class="track"><div class="fill" style="width:${Math.max(2,v/max*100).toFixed(1)}%"></div></div></div>`).join("")}</div>`;
+}
+
+/* ---------- offline bill reader ---------- */
+const MONTHS={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12};
+function pad(n){return String(n).padStart(2,"0");}
+function mkDate(y,m,d){ y=Number(y); if(y<100) y+=2000; m=Number(m); d=Number(d);
+  if(!(m>=1&&m<=12&&d>=1&&d<=31&&y>=2000&&y<=2100)) return null; return `${y}-${pad(m)}-${pad(d)}`; }
+function findDate(txt){
+  let m;
+  if((m=txt.match(/\b(20\d{2})[-\/.](\d{1,2})[-\/.](\d{1,2})\b/))) return mkDate(m[1],m[2],m[3]);
+  if((m=txt.match(/\b(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})\b/))) return mkDate(m[3],m[2],m[1]); /* Indian day-first */
+  if((m=txt.match(/\b(\d{1,2})(?:st|nd|rd|th)?[\s\-]*(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*[\s,\-']*(\d{2,4})\b/i))) return mkDate(m[3],MONTHS[m[2].toLowerCase()],m[1]);
+  if((m=txt.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})\b/i))) return mkDate(m[3],MONTHS[m[1].toLowerCase()],m[2]);
+  return null;
+}
+const NUM=/(?:₹|rs\.?|inr)?\s*((?:\d{1,3}(?:,\d{2,3})+|\d+)(?:\.\d{1,2})?)(?!\s*%)/gi;
+const DATE_RE=/\b\d{1,4}[-\/.]\d{1,2}[-\/.]\d{2,4}\b|\b\d{1,2}(?:st|nd|rd|th)?[\s\-]*(?:jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*[\s,\-']*\d{2,4}\b|\b\d{1,2}:\d{2}(?::\d{2})?\b/gi;
+function pick(n){ const c=n.filter(x=>x.cur); return (c.length?c:n)[(c.length?c:n).length-1].v; }
+function nums(line){ line=line.replace(DATE_RE," "); const out=[]; let m; NUM.lastIndex=0; while((m=NUM.exec(line))){ const v=parseFloat(m[1].replace(/,/g,"")); const cur=/₹|rs|inr/i.test(m[0]); if(v>0) out.push({v,cur}); } return out; }
+function findAmount(lines){
+  const keys=[/grand\s*total/i,/net\s*(amount|payable|total)/i,/amount\s*(paid|payable|debited|received)/i,/total\s*(amount|payable|paid|fare)/i,/\b(paid|debited|sent)\b/i,/\btotal\b/i,/\bamount\b/i];
+  for(const k of keys){
+    for(let i=lines.length-1;i>=0;i--){
+      if(!k.test(lines[i])||/sub\s*-?\s*total|discount|savings|tax\s*%|gstin|phone|mobile|a\/c|account|ref|order\s*(id|no)/i.test(lines[i])) continue;
+      const n=nums(lines[i]).filter(x=>!(x.v>=1900&&x.v<=2100&&!x.cur)); if(n.length) return pick(n);
+      const nx=lines[i+1]?nums(lines[i+1]):[]; if(nx.length) return pick(nx);
+    }
+  }
+  const curs=lines.flatMap(nums).filter(x=>x.cur); if(curs.length) return Math.max(...curs.map(x=>x.v));
+  return null;
+}
+function findMerchant(txt,lines){
+  let m;
+  if((m=txt.match(/\b(?:paid|sent|debited)[^\n]{0,40}?\bto\s+([A-Za-z][\w&.' -]{2,40}?)(?:\s+(?:on|via|ref|upi|using|from|for)\b|[.,\n]|$)/i))) return m[1].trim();
+  if((m=txt.match(/\bat\s+([A-Z][\w&.' -]{2,40}?)(?:\s+on\b|[.,\n]|$)/))) return m[1].trim();
+  const skip=/invoice|bill|receipt|tax|gst|cash\s*memo|original|duplicate|welcome|thank|date|time|table|^\W*$/i;
+  return lines.find(l=>/[a-z]{3}/i.test(l)&&!skip.test(l)&&l.length<=48&&!/\d{5,}/.test(l))||"";
+}
+const CAT_KEYS=[["Stay",/hotel|resort|homestay|room|lodge|cottage|check-?in|tariff|night/i],["Flights",/flight|airline|indigo|air\s*india|akasa|spicejet|pnr|boarding/i],
+  ["Fuel",/petrol|diesel|fuel|hpcl|bpcl|indian\s*oil|iocl|filling/i],["Cab & transport",/cab|taxi|innova|tempo|uber|ola|rapido|toll|parking|driver|bus|train|irctc/i],
+  ["Permits & fees",/permit|ilp|eilp|entry\s*fee|ticket\s*fee|forest/i],["Activities & tickets",/safari|jeep|ticket|entry|museum|cruise|boat|ferry/i],
+  ["Food",/restaurant|cafe|café|dhaba|food|kitchen|meal|thali|tea|coffee|biryani|veg|dinner|lunch|breakfast|swiggy|zomato|bakery/i],
+  ["Shopping",/store|mart|shop|emporium|silk|handicraft|souvenir/i],["Tips",/\btip\b|gratuity/i]];
+function parseBill(txt){
+  const t=txt.replace(/\r/g,""); const lines=t.split("\n").map(s=>s.trim()).filter(Boolean);
+  const amount=findAmount(lines), date=findDate(t), merchant=findMerchant(t,lines);
+  const cat=(CAT_KEYS.find(([,re])=>re.test(t))||["Other"])[0];
+  return {amount,date,merchant,category:cat};
+}
+
+/* ---------- rendering ---------- */
+function renderTripSel(){
+  const ts=[...D.trips].sort((a,b)=>(b.start||"").localeCompare(a.start||""));
+  $("#tripSel").innerHTML=`<option value="__all">All trips</option>`+ts.map(t=>`<option value="${esc(t.id)}" ${D.current===t.id?"selected":""}>${esc(t.name)}</option>`).join("");
+  if(D.current==="__all") $("#tripSel").value="__all";
+}
+function render(){
+  if(D.current!=="__all"&&!tripOf(D.current)) D.current=D.trips[0]?.id||"__all";
+  renderTripSel();
+  $("#fab").hidden=D.current==="__all"||!D.trips.length;
+  $("#fabScan").hidden=UI.tab==="places"; $("#fabAdd").textContent=UI.tab==="places"?"+ Place":"+ Expense";
+  renderBk();
+  if(!D.trips.length){ $("#view").innerHTML=`<div class="card empty"><h2>No trips yet</h2><p>Add a trip with the families travelling and how many people each has. Then log expenses as you go.</p><button class="primary" id="emptyNew">Create a trip</button></div>`; return; }
+  D.current==="__all"?renderAll():renderTrip(cur());
+}
+function renderAll(){
+  const rows=D.trips.map(t=>{const ex=expOf(t.id),tot=sum(ex),h=heads(t);return{t,tot,n:ex.length,h};}).sort((a,b)=>(b.t.start||"").localeCompare(a.t.start||""));
+  $("#view").innerHTML=`
+  <div class="card"><h2>All trips</h2><p class="note" style="margin:4px 0 0">${D.trips.length} trips · ${D.expenses.length} expenses</p></div>
+  <div class="list">${rows.map(r=>`<button class="exp" data-trip="${esc(r.t.id)}"><span class="d">${esc(r.t.name)}</span><span class="a">${money(r.tot,r.t.currency)}</span>
+    <span class="m">${r.t.start?`${fmtDate(r.t.start)} – ${fmtDate(r.t.end)}`:"No dates"} · ${r.h} people · ${r.n} expenses</span><span class="ph">${r.h?money(r.tot/r.h,r.t.currency)+"/person":""}</span></button>`).join("")}</div>
+  <div class="card"><h3 style="margin-bottom:10px">By category, all trips</h3>${bars(groupBy(D.expenses,e=>e.category))}</div>`;
+}
+function renderTrip(t){
+  const c=t.currency||"INR",ex=expOf(t.id),tot=sum(ex),h=heads(t),d=days(t),f=UI.filters;
+  const locs=[...new Set(ex.map(e=>e.location).filter(Boolean))].sort();
+  const payers=[...membersOf(t),...(t.participants||[])];
+  let body="";
+  if(UI.tab==="expenses"){
+    const list=ex.filter(e=>(!f.loc||e.location===f.loc)&&(!f.cat||e.category===f.cat)&&(!f.payer||e.paidBy===f.payer))
+      .sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.createdAt||0)-(a.createdAt||0));
+    let lastDay=null;
+    body=`<div class="filters">
+      <select id="flLoc" aria-label="Place"><option value="">All places</option>${locs.map(l=>`<option ${f.loc===l?"selected":""}>${esc(l)}</option>`).join("")}</select>
+      <select id="flCat" aria-label="Category"><option value="">All categories</option>${CATS.map(x=>`<option ${f.cat===x?"selected":""}>${x}</option>`).join("")}</select>
+      <select id="flPayer" aria-label="Paid by"><option value="">Paid by anyone</option>${payers.map(p=>`<option value="${esc(p.id)}" ${f.payer===p.id?"selected":""}>${esc(p.name)}</option>`).join("")}</select>
+    </div>
+    ${list.length?`<div class="list">${list.map(e=>{const sp=splitOf(e,t);const day=e.date||"";const hdr=day!==lastDay?`<div class="daylabel">${shortDate(day)}</div>`:"";lastDay=day;
+      return hdr+`<button class="exp" data-edit="${esc(e.id)}"><span class="d">${esc(e.description)}</span><span class="a">${money(e.amount,c,0)}</span>
+      <span class="m"><span class="tag">${esc(e.category||"Other")}</span>${esc(e.location||"")}${e.location?" · ":""}paid by ${esc(nameOf(t,e.paidBy))} · ${sp.mode==="one"?`for ${esc(sp.label)} only`:esc(sp.label)}</span>
+      <span class="ph">${sp.heads&&sp.mode!=="one"?money(e.amount/sp.heads,c)+"/person":""}</span></button>`;}).join("")}</div>
+      <div class="sumrow"><span>${list.length} expense${list.length===1?"":"s"}${list.length!==ex.length?" (filtered)":""}</span><span class="num">${money(sum(list),c)}</span></div>`
+    :`<div class="card empty"><h3>${ex.length?"Nothing matches these filters":"No expenses yet"}</h3><p>${ex.length?"Change a filter to see more.":"Tap + Expense to add one, or Read bill to fill it from a bill's text."}</p></div>`}`;
+  } else if(UI.tab==="breakdown"){
+    const byDay=groupBy(ex,e=>e.date||"").sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>[k==="Unspecified"?"No date":shortDate(k),v]);
+    body=`<div class="card"><h3 style="margin-bottom:10px">By place</h3>${bars(groupBy(ex,e=>e.location),c)}</div>
+      <div class="card"><h3 style="margin-bottom:10px">By category</h3>${bars(groupBy(ex,e=>e.category),c)}</div>
+      <div class="card"><h3 style="margin-bottom:10px">By day</h3>${bars(byDay,c)}</div>
+      <div class="card"><h3 style="margin-bottom:10px">Paid by</h3>${bars(groupBy(ex,e=>nameOf(t,e.paidBy)),c)}</div>`;
+  } else if(UI.tab==="places"){
+    body=renderPlaces(t);
+  } else {
+    const rows=balances(t),st=settleUp(rows);
+    body=`<div class="card"><div class="tbl"><table><thead><tr><th>Family</th><th class="r">Paid</th><th class="r">Share</th><th class="r">Balance</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${esc(r.p.name)} <span class="note">×${r.p.count}</span></td><td class="r num">${money(r.paid,c)}</td><td class="r num">${money(r.share,c)}</td><td class="r num ${r.bal>0.5?"pos":r.bal<-0.5?"neg":""}">${r.bal>0.5?"+":r.bal<-0.5?"−":""}${money(Math.abs(r.bal),c)}</td></tr>`).join("")}</tbody></table></div>
+      <p class="note" style="margin:8px 0 0">Shared costs split per person; one-person costs go fully to that family. What an adult pays counts for their family. + means they get money back.</p></div>
+      <div class="card"><h3 style="margin-bottom:8px">Settle up</h3>${st.length?`<ul class="settle">${st.map(x=>`<li><b>${esc(x.from)}</b> pays <b>${esc(x.to)}</b> <span class="num">${money(x.v,c)}</span></li>`).join("")}</ul>`:`<p class="note">Everyone is square.</p>`}</div>`;
+  }
+  $("#view").innerHTML=`
+  <div class="card">
+    <div class="bar-row" style="align-items:flex-start"><div style="flex:1;min-width:0"><h2>${esc(t.name)}</h2>
+      <div class="note">${t.start?`${fmtDate(t.start)} – ${fmtDate(t.end)}${d?` · ${d} days`:""}`:"No dates set"}</div></div>
+      <button class="ghost" id="editTrip">Edit</button></div>
+    <div class="people">${(t.participants||[]).map(p=>`<span class="pill">${esc(p.name)} ×${esc(p.count)}</span>`).join("")}</div>
+  </div>
+  <div class="tiles">
+    <div class="tile"><span class="label">Total</span><span class="v">${money(tot,c)}</span><span class="s">${ex.length} expenses</span></div>
+    <div class="tile"><span class="label">Per person</span><span class="v">${h?money(tot/h,c):"—"}</span><span class="s">${h} people</span></div>
+    <div class="tile"><span class="label">Per day</span><span class="v">${d?money(tot/d,c):"—"}</span><span class="s">${d?d+" days":"Set dates"}</span></div>
+    <div class="tile"><span class="label">Person / day</span><span class="v">${d&&h?money(tot/h/d,c):"—"}</span><span class="s">&nbsp;</span></div>
+  </div>
+  <div class="seg" role="tablist">${[["expenses","Expenses"],["breakdown","Breakdown"],["shares","Settle up"],["places","Places"]].map(([k,l])=>`<button role="tab" aria-selected="${UI.tab===k}" data-tab="${k}">${l}</button>`).join("")}</div>
+  ${body}`;
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click",ev=>{
+  const b=ev.target.closest("button"); if(!b) return;
+  if(b.dataset.trip){ D.current=b.dataset.trip; save(); render(); return; }
+  if(b.dataset.tab){ UI.tab=b.dataset.tab; render(); return; }
+  if(b.dataset.edit){ openExp(D.expenses.find(x=>x.id===b.dataset.edit)); return; }
+  if(b.dataset.day!==undefined){ UI.day=b.dataset.day; render(); return; }
+  if(b.dataset.om){ const p=(cur().pins||[]).find(x=>x.id===b.dataset.om); if(p){ location.href=omLink(p); setTimeout(()=>{ if(document.visibilityState==="visible") toast("If nothing opened, install Organic Maps from the App Store."); },1800); } return; }
+  if(b.dataset.gm){ const p=(cur().pins||[]).find(x=>x.id===b.dataset.gm); if(p) window.open(gmLink(p),"_blank"); return; }
+  if(b.dataset.pedit){ openPlace((cur().pins||[]).find(x=>x.id===b.dataset.pedit)); return; }
+  if(b.id==="kmlBtn"){ exportKml(cur()); return; }
+  if(b.hasAttribute("data-close")){ b.closest("dialog").close(); return; }
+  switch(b.id){
+    case "newTrip": case "emptyNew": openTrip(null); break;
+    case "editTrip": openTrip(cur()); break;
+    case "fabAdd": UI.tab==="places"?openPlace(null):openExp(null); break;
+    case "bkStatus": openMenu(); break;
+    case "fabScan": openExp(null,true); break;
+    case "menuBtn": openMenu(); break;
+  }
+});
+document.addEventListener("change",ev=>{
+  const id=ev.target.id;
+  if(id==="tripSel"){ D.current=ev.target.value; UI.filters={loc:"",cat:"",payer:""}; UI.day=""; save(); render(); }
+  if(id==="flLoc"){UI.filters.loc=ev.target.value;render();}
+  if(id==="flCat"){UI.filters.cat=ev.target.value;render();}
+  if(id==="flPayer"){UI.filters.payer=ev.target.value;render();}
+  if(ev.target.name==="alloc"||ev.target.closest?.("#fSplit")||id==="fCharge") updateSplitInfo();
+});
+
+/* ---------- trip sheet ---------- */
+function pRow(p){const d=document.createElement("div");d.className="prow";d.dataset.pid=p.id;
+  d.innerHTML=`<input aria-label="Family name" placeholder="e.g. Sharma family" value="${esc(p.name)}"><input type="number" inputmode="numeric" aria-label="People" min="1" value="${esc(p.count)}"><button type="button" class="x" aria-label="Remove">✕</button>`;
+  d.querySelector("button").onclick=()=>d.remove();return d;}
+function famOptions(sel){return `<option value="">No family</option>`+[...$("#pRows").children].map(r=>({id:r.dataset.pid,name:r.children[0].value.trim()})).filter(p=>p.name).map(p=>`<option value="${esc(p.id)}" ${sel===p.id?"selected":""}>${esc(p.name)}</option>`).join("");}
+function mRow(m){const d=document.createElement("div");d.className="mrow";d.dataset.mid=m.id;
+  d.innerHTML=`<input aria-label="Adult's name" placeholder="e.g. Asha" value="${esc(m.name)}"><select aria-label="Family">${famOptions(m.family||"")}</select><button type="button" class="x" aria-label="Remove">✕</button>`;
+  const s=d.children[1]; s.addEventListener("focus",()=>{const v=s.value;s.innerHTML=famOptions(v);});
+  d.querySelector("button").onclick=()=>d.remove();return d;}
+function openTrip(t){
+  UI.editTrip=t; $("#tripTitle").textContent=t?"Edit trip":"New trip"; $("#tripErr").textContent="";
+  $("#tName").value=t?.name||""; $("#tStart").value=t?.start||""; $("#tEnd").value=t?.end||""; $("#tCur").value=t?.currency||"INR"; $("#tPlaces").value=t?.places||"";
+  $("#pRows").innerHTML=""; (t?.participants?.length?t.participants:[{id:uid("p_"),name:"",count:1}]).forEach(p=>$("#pRows").append(pRow(p)));
+  $("#mRows").innerHTML=""; (t?.members||[]).forEach(m=>$("#mRows").append(mRow(m)));
+  $("#copyWrap").hidden=!!t||!D.trips.length;
+  $("#tCopy").innerHTML=`<option value="">Nobody (start fresh)</option>`+[...D.trips].sort((a,b)=>(b.start||"").localeCompare(a.start||"")).map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");
+  const del=$("#tripDelete"); del.hidden=!t; del.textContent="Delete trip"; del.dataset.armed="";
+  $("#tripDlg").showModal();
+}
+$("#addP").onclick=()=>$("#pRows").append(pRow({id:uid("p_"),name:"",count:1}));
+$("#addM").onclick=()=>$("#mRows").append(mRow({id:uid("m_"),name:"",family:""}));
+$("#tripForm").addEventListener("submit",ev=>{
+  ev.preventDefault();
+  const parts=[...$("#pRows").children].map(r=>({id:r.dataset.pid,name:r.children[0].value.trim(),count:Math.max(1,parseInt(r.children[1].value)||1)})).filter(p=>p.name);
+  const fam=new Set(parts.map(p=>p.id));
+  const mems=[...$("#mRows").children].map(r=>({id:r.dataset.mid,name:r.children[0].value.trim(),family:fam.has(r.children[1].value)?r.children[1].value:null})).filter(m=>m.name);
+  const name=$("#tName").value.trim();
+  if(!name){$("#tripErr").textContent="Give the trip a name.";return;}
+  if(!parts.length){$("#tripErr").textContent="Add at least one family.";return;}
+  const s=$("#tStart").value,e=$("#tEnd").value; if(s&&e&&e<s){$("#tripErr").textContent="The end date is before the start date.";return;}
+  const body={name,start:s||null,end:e||null,currency:$("#tCur").value,places:$("#tPlaces").value.trim(),participants:parts,members:mems};
+  if(UI.editTrip){ Object.assign(UI.editTrip,body); } else { const t={id:uid("t_"),...body,createdAt:Date.now()}; D.trips.push(t); D.current=t.id; }
+  save(); $("#tripDlg").close(); render(); toast("Trip saved");
+});
+$("#tripDelete").onclick=()=>{
+  const b=$("#tripDelete"), t=UI.editTrip;
+  if(!b.dataset.armed){ b.dataset.armed="1"; b.textContent=`Tap again to delete the trip and its ${expOf(t.id).length} expenses`; return; }
+  D.expenses=D.expenses.filter(e=>e.tripId!==t.id); D.trips=D.trips.filter(x=>x.id!==t.id); D.current=D.trips[0]?.id||"__all";
+  save(); $("#tripDlg").close(); render(); toast("Trip deleted");
+};
+
+/* ---------- expense sheet ---------- */
+const allocMode=()=>document.querySelector('input[name="alloc"]:checked')?.value||"all";
+function formAlloc(){const m=allocMode();return{alloc:m,splitAmong:m==="some"?[...$("#fSplit").querySelectorAll("input:checked")].map(i=>i.value):[],chargeTo:m==="one"?$("#fCharge").value:null};}
+function updateSplitInfo(){
+  const t=cur(); if(!t) return; const m=allocMode(); $("#fSplit").hidden=m!=="some"; $("#fCharge").hidden=m!=="one";
+  const fa=formAlloc(),amt=parseFloat($("#fAmount").value)||0,c=t.currency||"INR";
+  if(m==="some"&&!fa.splitAmong.length){$("#splitInfo").textContent="Tick at least one family.";return;}
+  const sp=splitOf(fa,t);
+  $("#splitInfo").textContent=sp.mode==="one"?`Whole amount goes to ${sp.label}${sp.alloc[0].id!==fa.chargeTo?` (counts for ${nameOf(t,sp.alloc[0].id)})`:""}.`:`${sp.heads} people${amt&&sp.heads?` · ${money(amt/sp.heads,c,2)} per person`:""}.`;
+}
+$("#fAmount").addEventListener("input",updateSplitInfo);
+function openExp(e,focusScan){
+  const t=cur(); if(!t) return;
+  UI.editExp=e||null; $("#expTitle").textContent=e?"Edit expense":"Add expense"; $("#expErr").textContent=""; $("#scanMsg").textContent=""; $("#billText").value="";
+  $("#fCur").textContent=t.currency||"INR";
+  $("#fCat").innerHTML=CATS.map(x=>`<option>${x}</option>`).join("");
+  const famOpts=(t.participants||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  const memOpts=membersOf(t).map(m=>`<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("");
+  const grouped=memOpts?`<optgroup label="Adults">${memOpts}</optgroup><optgroup label="Families">${famOpts}</optgroup>`:famOpts;
+  $("#fPaid").innerHTML=grouped; $("#fCharge").innerHTML=grouped;
+  const mode=e?.alloc||"all"; document.querySelector(`input[name="alloc"][value="${mode}"]`).checked=true;
+  const sel=e?.splitAmong?.length?e.splitAmong:(t.participants||[]).map(p=>p.id);
+  $("#fSplit").innerHTML=(t.participants||[]).map(p=>`<label><input type="checkbox" value="${esc(p.id)}" ${sel.includes(p.id)?"checked":""}> ${esc(p.name)} ×${esc(p.count)}</label>`).join("");
+  const first=membersOf(t)[0]?.id||t.participants?.[0]?.id||"";
+  $("#fCharge").value=e?.chargeTo||first; $("#fPaid").value=e?.paidBy||D.lastPayer?.[t.id]||first;
+  const places=[...new Set([...(t.places||"").split(",").map(s=>s.trim()),...expOf(t.id).map(x=>x.location)].filter(Boolean))];
+  $("#locList").innerHTML=places.map(p=>`<option value="${esc(p)}">`).join("");
+  const td=todayISO();
+  $("#fDate").value=e?.date||(t.start&&t.end&&td>=t.start&&td<=t.end?td:(t.start||td));
+  $("#fAmount").value=e?.amount??""; $("#fDesc").value=e?.description||""; $("#fLoc").value=e?.location||"";
+  $("#fCat").value=e?.category||"Food"; $("#fMerchant").value=e?.merchant||""; $("#fNotes").value=e?.notes||"";
+  $("#scanBox").hidden=!!e&&!focusScan;
+  const del=$("#expDelete"); del.hidden=!e; del.textContent="Delete expense"; del.dataset.armed="";
+  updateSplitInfo(); $("#expDlg").showModal();
+  if(focusScan) setTimeout(()=>$("#billText").focus(),50);
+}
+$("#readBtn").onclick=()=>{
+  const txt=$("#billText").value.trim(); if(!txt){$("#scanMsg").textContent="Scan or paste the bill text first.";return;}
+  const r=parseBill(txt); const got=[];
+  if(r.amount){$("#fAmount").value=r.amount;got.push("amount");}
+  if(r.date){$("#fDate").value=r.date;got.push("date");}
+  if(r.merchant){$("#fMerchant").value=r.merchant.slice(0,80); if(!$("#fDesc").value) $("#fDesc").value=r.merchant.slice(0,80); got.push("vendor");}
+  $("#fCat").value=r.category; if(!$("#fNotes").value) $("#fNotes").value="From bill: "+txt.replace(/\s+/g," ").slice(0,200);
+  updateSplitInfo();
+  $("#scanMsg").textContent=got.length?`Found ${got.join(", ")}. Check them before saving.`:"Couldn't find an amount. Enter it by hand.";
+};
+$("#expForm").addEventListener("submit",ev=>{
+  ev.preventDefault(); const t=cur(); const amt=parseFloat($("#fAmount").value); const fa=formAlloc();
+  if(!$("#fDesc").value.trim()){$("#expErr").textContent="Add a short description.";return;}
+  if(!(amt>0)){$("#expErr").textContent="Enter an amount above zero.";return;}
+  if(fa.alloc==="some"&&!fa.splitAmong.length){$("#expErr").textContent="Tick at least one family.";return;}
+  const body={tripId:t.id,date:$("#fDate").value||null,amount:Math.round(amt*100)/100,description:$("#fDesc").value.trim(),location:$("#fLoc").value.trim(),
+    category:$("#fCat").value,paidBy:$("#fPaid").value,...fa,merchant:$("#fMerchant").value.trim(),notes:$("#fNotes").value.trim(),updatedAt:Date.now()};
+  if(UI.editExp) Object.assign(UI.editExp,body); else D.expenses.push({id:uid("e_"),...body,createdAt:Date.now()});
+  D.lastPayer={...(D.lastPayer||{}),[t.id]:body.paidBy};
+  save(); $("#expDlg").close(); render(); toast("Expense saved");
+});
+$("#expDelete").onclick=()=>{
+  const b=$("#expDelete"); if(!b.dataset.armed){b.dataset.armed="1";b.textContent="Tap again to delete";return;}
+  D.expenses=D.expenses.filter(x=>x!==UI.editExp); save(); $("#expDlg").close(); render(); toast("Expense deleted");
+};
+
+/* ---------- share, export, import, backup ---------- */
+function openMenu(){
+  const one=D.current!=="__all";
+  ["#mReport","#mCsv","#mImport"].forEach(s=>$(s).disabled=!one);
+  $("#storeNote").textContent=storageOk?"Everything is stored only on this phone. Save a backup now and then (to Files or iCloud Drive), and before changing phones.":"Saving on this phone failed. Export a backup now.";
+  $("#menuDlg").showModal();
+}
+function report(t){
+  const c=t.currency||"INR",ex=expOf(t.id),tot=sum(ex),h=heads(t),rows=balances(t),st=settleUp(rows);
+  const L=[`*${t.name}*`, t.start?`${fmtDate(t.start)} – ${fmtDate(t.end)}`:"", `${h} people · ${ex.length} expenses`, "",
+    `*Total:* ${money(tot,c)}`, h?`*Per person:* ${money(tot/h,c)}`:"", "", "*By category*",
+    ...groupBy(ex,e=>e.category).map(([k,v])=>`• ${k}: ${money(v,c)}`), "", "*By place*",
+    ...groupBy(ex,e=>e.location).map(([k,v])=>`• ${k}: ${money(v,c)}`), "", "*Balances*",
+    ...rows.map(r=>`• ${r.p.name}: paid ${money(r.paid,c)}, share ${money(r.share,c)} → ${r.bal>0.5?"gets back "+money(r.bal,c):r.bal<-0.5?"owes "+money(-r.bal,c):"square"}`),
+    "", "*Settle up*", ...(st.length?st.map(x=>`• ${x.from} pays ${x.to} ${money(x.v,c)}`):["• Everyone is square"]), "", "— Trip Ledger"];
+  return L.filter((l,i,a)=>!(l===""&&a[i-1]==="")).join("\n");
+}
+const q=v=>{const s=String(v??"");return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;};
+const CSV_HEAD=["ID","Trip","Date","Description","Place","Category","Paid by","Allocation","Allocated to","Heads","Amount","Currency","Per person","Vendor","Notes"];
+function csvFor(trips){
+  const lines=[CSV_HEAD.join(",")];
+  for(const t of trips) for(const e of expOf(t.id).sort((a,b)=>(a.date||"").localeCompare(b.date||""))){ const sp=splitOf(e,t);
+    lines.push([e.id,t.name,e.date,e.description,e.location,e.category,nameOf(t,e.paidBy),{all:"Everyone",some:"Selected families",one:"One person/family"}[sp.mode],sp.label,sp.heads,e.amount,t.currency||"INR",sp.mode!=="one"&&sp.heads?(e.amount/sp.heads).toFixed(2):"",e.merchant,e.notes].map(q).join(",")); }
+  return lines.join("\r\n");
+}
+const slug=s=>s.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"trip";
+async function shareFile(name,text,type,noBom){
+  const file=new File([(noBom?"":"\ufeff")+text],name,{type});
+  try{ if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],title:name}); return; } }catch(e){ if(e.name==="AbortError") return; }
+  const a=document.createElement("a"); a.href=URL.createObjectURL(file); a.download=name; document.body.append(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);
+}
+$("#mReport").onclick=async()=>{ const txt=report(cur());
+  try{ if(navigator.share){ await navigator.share({text:txt}); return; } }catch(e){ if(e.name==="AbortError") return; }
+  try{ await navigator.clipboard.writeText(txt); toast("Report copied. Paste it into WhatsApp."); }catch{ toast("Sharing isn't available here."); } };
+$("#mCsv").onclick=()=>shareFile(`${slug(cur().name)}-expenses.csv`,csvFor([cur()]),"text/csv");
+$("#mAllCsv").onclick=()=>shareFile(`trip-ledger-all-${todayISO()}.csv`,csvFor(D.trips),"text/csv");
+$("#mBackup").onclick=()=>shareFile(`trip-ledger-backup-${todayISO()}.json`,JSON.stringify({app:"trip-ledger",version:1,savedAt:new Date().toISOString(),...D},null,1),"application/json");
+$("#mRestore").onclick=()=>$("#restoreFile").click();
+$("#mImport").onclick=()=>$("#importFile").click();
+$("#restoreFile").onchange=async ev=>{ const f=ev.target.files[0]; ev.target.value=""; if(!f) return;
+  try{ const d=JSON.parse((await f.text()).replace(/^﻿/,"")); if(!Array.isArray(d.trips)||!Array.isArray(d.expenses)) throw 0;
+    D={trips:d.trips,expenses:d.expenses,current:d.current||d.trips[0]?.id||"__all",lastPayer:d.lastPayer||{}}; save(); $("#menuDlg").close(); render(); toast(`Restored ${d.trips.length} trips and ${d.expenses.length} expenses`); }
+  catch{ toast("That file isn't a Trip Ledger backup."); } };
+function parseCsv(text){ const rows=[];let row=[],f="",i=0,inq=false; text=text.replace(/^﻿/,"");
+  for(;i<text.length;i++){ const ch=text[i];
+    if(inq){ if(ch==='"'){ if(text[i+1]==='"'){f+='"';i++;} else inq=false; } else f+=ch; }
+    else if(ch==='"') inq=true; else if(ch===","){row.push(f);f="";} else if(ch==="\n"||ch==="\r"){ if(ch==="\r"&&text[i+1]==="\n") i++; row.push(f);rows.push(row);row=[];f=""; } else f+=ch; }
+  if(f!==""||row.length){row.push(f);rows.push(row);} return rows.filter(r=>r.some(x=>x.trim()!==""));
+}
+$("#importFile").onchange=async ev=>{ const f=ev.target.files[0]; ev.target.value=""; if(!f) return; const t=cur();
+  const rows=parseCsv(await f.text()); const h=rows.shift()||[]; const ix=n=>h.findIndex(x=>x.trim().toLowerCase()===n.toLowerCase());
+  const need=["Date","Description","Amount","Paid by"]; if(need.some(n=>ix(n)<0)){ toast("This CSV isn't from Trip Ledger."); return; }
+  const byName=n=>{ n=(n||"").trim().toLowerCase(); return [...membersOf(t),...(t.participants||[])].find(p=>p.name.toLowerCase()===n)?.id; };
+  let added=0,skipped=0,newPeople=[];
+  for(const r of rows){ const g=n=>ix(n)>=0?(r[ix(n)]||"").trim():"";
+    const id=g("ID")||uid("e_"); if(D.expenses.some(e=>e.id===id)){skipped++;continue;}
+    let payer=byName(g("Paid by")); if(!payer&&g("Paid by")){ const m={id:uid("m_"),name:g("Paid by"),family:null}; t.members=[...membersOf(t),m]; payer=m.id; newPeople.push(m.name); }
+    const alloc=g("Allocation").toLowerCase(), to=g("Allocated to"); let ea={alloc:"all",splitAmong:[],chargeTo:null};
+    if(alloc.startsWith("one")){ const cid=byName(to); if(cid) ea={alloc:"one",splitAmong:[],chargeTo:cid}; }
+    else if(alloc.startsWith("selected")){ const ids=to.split("+").map(byName).filter(Boolean); if(ids.length) ea={alloc:"some",splitAmong:ids,chargeTo:null}; }
+    const amt=parseFloat(g("Amount").replace(/,/g,"")); if(!(amt>0)){skipped++;continue;}
+    D.expenses.push({id,tripId:t.id,date:/^\d{4}-\d{2}-\d{2}$/.test(g("Date"))?g("Date"):null,description:g("Description")||"Imported expense",location:g("Place"),
+      category:CATS.includes(g("Category"))?g("Category"):"Other",paidBy:payer||"",...ea,amount:amt,merchant:g("Vendor"),notes:g("Notes"),createdAt:Date.now(),updatedAt:Date.now()});
+    added++; }
+  save(); $("#menuDlg").close(); render();
+  toast(`Imported ${added} expense${added===1?"":"s"}${skipped?`, skipped ${skipped}`:""}${newPeople.length?`. New: ${newPeople.join(", ")} (link them in Edit trip)`:""}`);
+};
+
+/* ---------- copy people into a new trip ---------- */
+$("#tCopy").addEventListener("change",()=>{
+  const src=tripOf($("#tCopy").value); if(!src) return;
+  $("#pRows").innerHTML=""; (src.participants||[]).forEach(p=>$("#pRows").append(pRow({...p})));
+  $("#mRows").innerHTML=""; (src.members||[]).forEach(m=>$("#mRows").append(mRow({...m})));
+});
+
+/* ---------- places & offline maps ---------- */
+function tripDays(t){ if(!t.start||!t.end) return []; const out=[]; let d=new Date(t.start+"T00:00:00"); const e=new Date(t.end+"T00:00:00");
+  for(let i=0;d<=e&&i<60;i++){ out.push(new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)); d.setDate(d.getDate()+1);} return out; }
+const dayLabel=(t,iso)=>{ const i=tripDays(t).indexOf(iso); return i>=0?`Day ${i+1} · ${shortDate(iso)}`:(iso?shortDate(iso):"Any day"); };
+const omLink=p=>`om://map?v=1&ll=${p.lat},${p.lng}&n=${encodeURIComponent(p.name)}&appname=Trip%20Ledger`;
+const gmLink=p=>`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving`;
+function parseCoords(s){
+  s=(s||"").trim(); let m;
+  const ok=(a,b)=>{a=parseFloat(a);b=parseFloat(b);return (Math.abs(a)<=90&&Math.abs(b)<=180&&!(a===0&&b===0))?{lat:+a.toFixed(6),lng:+b.toFixed(6)}:null;};
+  if((m=s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/))) return ok(m[1],m[2]);
+  if((m=s.match(/[?&](?:q|query|ll|destination|daddr)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/i))) return ok(m[1],m[2]);
+  if((m=s.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/))) return ok(m[1],m[2]);
+  if((m=s.match(/(-?\d{1,2}\.\d{2,})\s*°?\s*([NS])?[,\s]+(-?\d{1,3}\.\d{2,})\s*°?\s*([EW])?/i))){
+    let a=+m[1],b=+m[3]; if(/s/i.test(m[2]||""))a=-a; if(/w/i.test(m[4]||""))b=-b; return ok(a,b); }
+  return null;
+}
+function renderPlaces(t){
+  const pins=t.pins||[], days=tripDays(t), sel=UI.day??"";
+  const chips=[["","All"],...days.map((d,i)=>[d,`Day ${i+1}`]),...(pins.some(p=>!p.day||!days.includes(p.day))?[["__none","Other"]]:[])];
+  const list=pins.filter(p=>sel===""||(sel==="__none"?(!p.day||!days.includes(p.day)):p.day===sel))
+    .sort((a,b)=>(a.day||"9").localeCompare(b.day||"9"));
+  let last=null;
+  return `<div class="card" style="display:flex;flex-direction:column;gap:8px">
+      <details ${pins.length?"":"open"}><summary style="font-weight:600;cursor:pointer;min-height:32px">Offline maps and navigation: how it works</summary>
+      <p class="note" style="margin:8px 0 0">Install <b>Organic Maps</b> (free on the App Store) and, on Wi-Fi before you go, download the regions you need (the states or regions your trip covers). It then shows the map, your position and turn-by-turn directions with no signal. Each region you download stays on the phone, so you can keep many.</p>
+      <p class="note" style="margin:0">Tap <b>Navigate</b> on a place to open it there, then tap "Route to". To load every place of this trip into Organic Maps as its own list, use <b>Send all to Organic Maps</b>.</p></details>
+      <button id="kmlBtn" ${pins.length?"":"disabled"}>Send all to Organic Maps (${pins.length} places)</button>
+    </div>
+    ${pins.length?`<div class="chips" role="toolbar" aria-label="Day">${chips.map(([k,l])=>`<button data-day="${esc(k)}" aria-pressed="${sel===k}">${esc(l)}</button>`).join("")}</div>`:""}
+    ${list.length?`<div class="list">${list.map(p=>{ const hdr=p.day!==last?`<div class="daylabel">${esc(dayLabel(t,p.day))}</div>`:""; last=p.day;
+      return hdr+`<div class="place"><div class="top"><div style="min-width:0"><div style="font-weight:600;overflow-wrap:anywhere">${esc(p.name)}</div>
+        <div class="m note"><span class="tag">${esc(p.type||"Sight")}</span>${esc(p.note||"")}</div></div>
+        <button class="ghost" data-pedit="${esc(p.id)}" style="min-height:36px;padding:4px 8px">Edit</button></div>
+        <div class="acts"><button class="primary" data-om="${esc(p.id)}">Navigate</button><button data-gm="${esc(p.id)}">Google Maps</button></div></div>`; }).join("")}</div>`
+    :`<div class="card empty"><h3>${pins.length?"No places on this day":"No places yet"}</h3><p>Tap + Place to save hotels, sights and stops for this trip. They work offline.</p></div>`}`;
+}
+function openPlace(p){
+  const t=cur(); UI.editPlace=p||null; $("#placeTitle").textContent=p?"Edit place":"Add place"; $("#placeErr").textContent=""; $("#plMsg").textContent="";
+  $("#plName").value=p?.name||""; $("#plLoc").value=p?`${p.lat}, ${p.lng}`:""; $("#plType").value=p?.type||"Sight"; $("#plNote").value=p?.note||"";
+  const days=tripDays(t);
+  $("#plDay").innerHTML=`<option value="">Any day</option>`+days.map((d,i)=>`<option value="${d}">Day ${i+1} · ${shortDate(d)}</option>`).join("");
+  $("#plDay").value=p?.day||(UI.day&&UI.day!=="__none"?UI.day:"");
+  const del=$("#placeDelete"); del.hidden=!p; del.textContent="Delete place"; del.dataset.armed="";
+  $("#placeDlg").showModal();
+}
+$("#plHere").onclick=()=>{
+  if(!navigator.geolocation){ $("#plMsg").textContent="Location isn't available."; return; }
+  $("#plMsg").textContent="Finding you…";
+  navigator.geolocation.getCurrentPosition(pos=>{ $("#plLoc").value=`${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`; $("#plMsg").textContent=`Got it (±${Math.round(pos.coords.accuracy)} m)`; },
+    ()=>{ $("#plMsg").textContent="Couldn't get your location. Allow location for Trip Ledger in Settings."; },{enableHighAccuracy:true,timeout:20000});
+};
+$("#placeForm").addEventListener("submit",ev=>{
+  ev.preventDefault(); const t=cur(); const name=$("#plName").value.trim(); const c=parseCoords($("#plLoc").value);
+  if(!name){$("#placeErr").textContent="Give the place a name.";return;}
+  if(!c){$("#placeErr").textContent="Couldn't read the location. Paste coordinates like 27.5098, 92.1009, or use where you are now.";return;}
+  const body={name,...c,day:$("#plDay").value||null,type:$("#plType").value,note:$("#plNote").value.trim()};
+  t.pins=t.pins||[]; if(UI.editPlace) Object.assign(UI.editPlace,body); else t.pins.push({id:uid("pl_"),...body});
+  save(); $("#placeDlg").close(); render(); toast("Place saved");
+});
+$("#placeDelete").onclick=()=>{ const b=$("#placeDelete"); if(!b.dataset.armed){b.dataset.armed="1";b.textContent="Tap again to delete";return;}
+  const t=cur(); t.pins=(t.pins||[]).filter(x=>x!==UI.editPlace); save(); $("#placeDlg").close(); render(); toast("Place deleted"); };
+function exportKml(t){
+  const x=s=>esc(s);
+  const pm=(t.pins||[]).map(p=>`<Placemark><name>${x(p.name)}</name><description>${x([dayLabel(t,p.day),p.type,p.note].filter(Boolean).join(" · "))}</description><Point><coordinates>${p.lng},${p.lat}</coordinates></Point></Placemark>`).join("\n");
+  shareFile(`${slug(t.name)}.kml`,`<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${x(t.name)}</name>\n${pm}\n</Document></kml>`,"application/vnd.google-earth.kml+xml",true);
+}
+
+/* ---------- encrypted automatic backup to a private GitHub repo ---------- */
+var BKKEY="tripledger.backup", BK=null, bkTimer=null, bkBusy=false, bkKey=null;
+try{ BK=JSON.parse(localStorage.getItem(BKKEY)); }catch{ BK=null; }
+const b64=bytes=>{ let s=""; const u=new Uint8Array(bytes); for(let i=0;i<u.length;i+=0x8000) s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000)); return btoa(s); };
+const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function deriveKey(pass,salt,iter){ const base=await crypto.subtle.importKey("raw",new TextEncoder().encode(pass),"PBKDF2",false,["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:iter,hash:"SHA-256"},base,{name:"AES-GCM",length:256},true,["encrypt","decrypt"]); }
+async function getKey(){ if(bkKey) return bkKey; bkKey=await crypto.subtle.importKey("jwk",BK.jwk,{name:"AES-GCM"},false,["encrypt","decrypt"]); return bkKey; }
+async function encryptData(obj,key,salt,iter){ const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(JSON.stringify(obj)));
+  return JSON.stringify({app:"trip-ledger",format:1,cipher:"AES-256-GCM",kdf:"PBKDF2-SHA256",iter,salt:b64(salt),iv:b64(iv),savedAt:new Date().toISOString(),data:b64(ct)}); }
+async function decryptFile(txt,pass){ const f=JSON.parse(txt); if(f.app!=="trip-ledger"||!f.data) throw new Error("not a Trip Ledger backup");
+  const salt=unb64(f.salt), key=await deriveKey(pass,salt,f.iter);
+  let pt; try{ pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:unb64(f.iv)},key,unb64(f.data)); }catch{ throw new Error("Wrong passphrase"); }
+  return {data:JSON.parse(new TextDecoder().decode(pt)),key,salt,iter:f.iter}; }
+const BKPATH="trip-ledger-backup.json";
+async function gh(cfg,method,path,body,raw){
+  const r=await fetch(`https://api.github.com/repos/${cfg.repo}${path}`,{method,cache:"no-store",headers:{Authorization:`Bearer ${cfg.token}`,Accept:raw?"application/vnd.github.raw+json":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});
+  return r;
+}
+async function ghCheckRepo(cfg){
+  const r=await gh(cfg,"GET","");
+  if(r.status===401) throw new Error("GitHub didn't accept the token. Check it was copied fully and hasn't expired.");
+  if(r.status===404) throw new Error("Repository not found. Check the name, and that the token has access to it.");
+  if(!r.ok) throw new Error(`GitHub error ${r.status}.`);
+  const j=await r.json(); if(!j.private) throw new Error("That repository is public. Make it private first (Settings → General → Danger Zone → Change visibility).");
+  if(j.permissions&&!j.permissions.push) throw new Error("The token can't write to this repository. Give it Contents: Read and write.");
+}
+async function ghSha(cfg){ const r=await gh(cfg,"GET",`/contents/${BKPATH}`); if(r.status===404) return null; if(!r.ok) throw new Error(`GitHub error ${r.status}`); return (await r.json()).sha; }
+async function ghPut(cfg,text,sha){
+  const r=await gh(cfg,"PUT",`/contents/${BKPATH}`,{message:`Trip Ledger backup ${new Date().toISOString()}`,content:b64(new TextEncoder().encode(text)),...(sha?{sha}:{})});
+  if(r.status===409||r.status===422){ const s=await ghSha(cfg); const r2=await gh(cfg,"PUT",`/contents/${BKPATH}`,{message:`Trip Ledger backup ${new Date().toISOString()}`,content:b64(new TextEncoder().encode(text)),...(s?{sha:s}:{})}); if(!r2.ok) throw new Error(`GitHub error ${r2.status}`); return (await r2.json()).content.sha; }
+  if(r.status===401) throw new Error("token");
+  if(!r.ok) throw new Error(`GitHub error ${r.status}`);
+  return (await r.json()).content.sha;
+}
+function saveBK(){ try{ localStorage.setItem(BKKEY,JSON.stringify(BK)); }catch{} }
+function payload(){ const {trips,expenses,current,lastPayer,pinsSeeded}=D; return {trips,expenses,current,lastPayer,pinsSeeded}; }
+function queueBackup(){ if(!BK||!BK.jwk) return; BK.dirty=true; saveBK(); renderBk(); clearTimeout(bkTimer); bkTimer=setTimeout(runBackup,4000); }
+async function runBackup(force){
+  if(!BK||!BK.jwk||bkBusy) return; if(!force&&!BK.dirty) return;
+  if(!navigator.onLine){ renderBk(); return; }
+  bkBusy=true; renderBk();
+  try{ const key=await getKey(); const text=await encryptData(payload(),key,unb64(BK.salt),BK.iter);
+    BK.sha=await ghPut(BK,text,BK.sha); BK.dirty=false; BK.last=Date.now(); BK.error=null; }
+  catch(e){ BK.error=e.message==="token"?"GitHub token expired or revoked":(navigator.onLine?e.message:null); }
+  bkBusy=false; saveBK(); renderBk();
+}
+function ago(ts){ const s=(Date.now()-ts)/1000; if(s<60) return "just now"; if(s<3600) return Math.round(s/60)+" min ago"; if(s<86400) return Math.round(s/3600)+" hr ago"; return new Date(ts).toLocaleDateString("en-IN",{day:"numeric",month:"short"}); }
+function bkState(){
+  if(!BK||!BK.jwk) return ["","Backup off — tap to set up"];
+  if(bkBusy) return ["warn","Backing up…"];
+  if(BK.error) return ["err","Backup failing — tap to fix"];
+  if(BK.dirty) return ["warn",navigator.onLine?"Backup pending":"Offline — will back up when online"];
+  return ["ok",`Backed up ${BK.last?ago(BK.last):""}`];
+}
+function renderBk(){
+  const el=$("#bkStatus"); if(!el) return; const [cls,txt]=bkState();
+  el.innerHTML=`<span class="dot ${cls}"></span><span>${esc(txt)}</span>`;
+  const on=!!(BK&&BK.jwk);
+  $("#mBkSetup").textContent=on?"Change backup settings":"Set up automatic backup";
+  $("#mBkNow").hidden=!on;
+  $("#bkInfo").textContent=on?`${txt}. Saving to ${BK.repo} (private, encrypted).${BK.error?" Problem: "+BK.error:""}`:"Not set up. Data is only on this phone, so deleting the app would delete it.";
+}
+window.addEventListener("online",()=>runBackup());
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ renderBk(); runBackup(); } });
+setInterval(renderBk,60000);
+$("#mBkNow").onclick=()=>runBackup(true);
+$("#mBkSetup").onclick=()=>{ $("#menuDlg").close(); openBk(); };
+function openBk(){ $("#bkErr").textContent=""; $("#bkRepo").value=BK?.repo||""; $("#bkToken").value=BK?.token||""; $("#bkPass").value=""; $("#bkPass2").value="";
+  $("#bkOff").hidden=!(BK&&BK.jwk); $("#bkDlg").showModal(); }
+function bkFields(needConfirm){
+  const repo=$("#bkRepo").value.trim().replace(/^https?:\/\/github\.com\//i,"").replace(/\.git$/,"").replace(/\/$/,""), token=$("#bkToken").value.trim(), pass=$("#bkPass").value;
+  if(!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("Enter the repository as owner/name, e.g. yourname/trip-ledger-data.");
+  if(!token) throw new Error("Paste the GitHub access token.");
+  if(pass.length<8) throw new Error("Use a passphrase of at least 8 characters.");
+  if(needConfirm&&pass!==$("#bkPass2").value) throw new Error("The two passphrases don't match.");
+  return {repo,token,pass};
+}
+async function withBusy(btn,fn){ const t=btn.textContent; btn.disabled=true; btn.textContent="Working…"; $("#bkErr").textContent="";
+  try{ await fn(); }catch(e){ $("#bkErr").textContent=e.message||String(e); } btn.disabled=false; btn.textContent=t; }
+$("#bkConnect").onclick=()=>withBusy($("#bkConnect"),async()=>{
+  if(!navigator.onLine) throw new Error("You're offline. Connect to the internet to set this up.");
+  const f=bkFields(true); await ghCheckRepo(f);
+  const existing=await ghSha(f);
+  if(existing&&!(BK&&BK.repo===f.repo&&BK.sha===existing)&&$("#bkConnect").dataset.armed!=="1"){
+    $("#bkConnect").dataset.armed="1"; throw new Error("This repository already has a backup. To bring that data onto this phone, tap Restore. Tap Connect again to replace it with this phone's data (older versions stay in GitHub's history)."); }
+  $("#bkConnect").dataset.armed="";
+  const salt=crypto.getRandomValues(new Uint8Array(16)), iter=250000, key=await deriveKey(f.pass,salt,iter);
+  BK={repo:f.repo,token:f.token,salt:b64(salt),iter,jwk:await crypto.subtle.exportKey("jwk",key),sha:existing,dirty:true}; bkKey=null; saveBK();
+  await runBackup(true); if(BK.error) throw new Error(BK.error);
+  $("#bkDlg").close(); toast("Automatic backup is on");
+});
+$("#bkRestore").onclick=()=>withBusy($("#bkRestore"),async()=>{
+  if(!navigator.onLine) throw new Error("You're offline. Connect to the internet to restore.");
+  const f=bkFields(false); await ghCheckRepo(f);
+  const r=await gh(f,"GET",`/contents/${BKPATH}`,null,true); if(r.status===404) throw new Error("No backup found in that repository yet."); if(!r.ok) throw new Error(`GitHub error ${r.status}`);
+  const {data,key,salt,iter}=await decryptFile(await r.text(),f.pass);
+  const n=(data.expenses||[]).length;
+  if(D.expenses.length&&$("#bkRestore").dataset.armed!=="1"){ $("#bkRestore").dataset.armed="1"; throw new Error(`This replaces the ${D.expenses.length} expenses on this phone with the ${n} in the backup. Tap Restore again to confirm.`); }
+  $("#bkRestore").dataset.armed="";
+  D={...data}; localStorage.setItem(KEY,JSON.stringify(D));
+  BK={repo:f.repo,token:f.token,salt:b64(salt),iter,jwk:await crypto.subtle.exportKey("jwk",key),sha:await ghSha(f),dirty:false,last:Date.now()}; bkKey=null; saveBK();
+  $("#bkDlg").close(); render(); toast(`Restored ${data.trips.length} trips and ${n} expenses`);
+});
+$("#bkOff").onclick=()=>{ const b=$("#bkOff"); if(!b.dataset.armed){b.dataset.armed="1";b.textContent="Tap again to turn off (the copy on GitHub stays)";return;}
+  b.dataset.armed=""; b.textContent="Turn off automatic backup"; BK=null; bkKey=null; try{localStorage.removeItem(BKKEY);}catch{} $("#bkDlg").close(); renderBk(); toast("Automatic backup is off"); };
+
+/* ---------- offline ---------- */
+if("serviceWorker" in navigator && location.protocol==="https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
+render();
+</script>
+</body>
+</html>
