@@ -228,6 +228,7 @@ dialog::backdrop{background:rgb(10 20 28 / .5)}
         <p class="note" id="storeNote">Everything is stored only on this phone. Save a backup now and then (to Files or iCloud Drive), and before changing phones.</p>
       </div>
       <input type="file" id="importFile" accept=".csv,text/csv,text/plain" hidden>
+      <input type="file" id="placesFile" accept=".xlsx,.csv,.kml,.gpx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
       <input type="file" id="restoreFile" accept=".json,application/json" hidden>
     </div>
   </div>
@@ -239,16 +240,18 @@ dialog::backdrop{background:rgb(10 20 28 / .5)}
     <header><button type="button" class="ghost" data-close>Cancel</button><h2 id="placeTitle">Add place</h2><button type="submit" class="ghost" style="font-weight:700">Save</button></header>
     <div class="body">
       <div class="form">
-        <label class="full">Name<input type="text" id="plName" required placeholder="e.g. Sela Lake"></label>
+        <label class="full">Name<input type="text" id="plName" required placeholder="e.g. Sela Lake, Tawang"></label>
+        <div class="full bar-row"><button type="button" class="warm" id="plFind">Find location by name</button><span class="note" id="plFindMsg" aria-live="polite"></span></div>
+        <div class="full choices" id="plResults" hidden></div>
         <label class="full">Location
-          <input type="text" id="plLoc" placeholder="27.5098, 92.1009  or paste a Google Maps link">
+          <input type="text" id="plLoc" placeholder="Filled by Find, or paste coordinates / a Google Maps link">
         </label>
         <div class="full bar-row"><button type="button" id="plHere">Use where I am now</button><span class="note" id="plMsg" aria-live="polite"></span></div>
         <label>Day<select id="plDay"></select></label>
         <label>Type<select id="plType"><option>Sight</option><option>Stay</option><option>Food</option><option>Fuel</option><option>Transport</option><option>Other</option></select></label>
         <label class="full">Note<input type="text" id="plNote" placeholder="optional, e.g. entry 7:30 am"></label>
       </div>
-      <span class="note">In Google Maps, tap and hold a spot, then copy the coordinates at the top. A shared Google Maps link also works if it contains the coordinates.</span>
+      <span class="note">Find needs internet and looks the name up on OpenStreetMap; add the town for better matches. You can also leave the location empty and find it later. In Google Maps, tap and hold a spot to copy its coordinates.</span>
       <span class="note" id="placeErr" role="alert" style="color:var(--bad)"></span>
       <button type="button" class="danger" id="placeDelete" hidden>Delete place</button>
     </div>
@@ -488,6 +491,8 @@ document.addEventListener("click",ev=>{
   if(b.dataset.gm){ const p=(cur().pins||[]).find(x=>x.id===b.dataset.gm); if(p) window.open(gmLink(p),"_blank"); return; }
   if(b.dataset.pedit){ openPlace((cur().pins||[]).find(x=>x.id===b.dataset.pedit)); return; }
   if(b.id==="kmlBtn"){ exportKml(cur()); return; }
+  if(b.id==="plImport"){ $("#placesFile").click(); return; }
+  if(b.id==="plFindAll"){ b.disabled=true; findMissing(cur()); return; }
   if(b.hasAttribute("data-close")){ b.closest("dialog").close(); return; }
   switch(b.id){
     case "newTrip": case "emptyNew": openTrip(null); break;
@@ -697,12 +702,12 @@ function parseCoords(s){
   if((m=s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/))) return ok(m[1],m[2]);
   if((m=s.match(/[?&](?:q|query|ll|destination|daddr)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/i))) return ok(m[1],m[2]);
   if((m=s.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/))) return ok(m[1],m[2]);
-  if((m=s.match(/(-?\d{1,2}\.\d{2,})\s*°?\s*([NS])?[,\s]+(-?\d{1,3}\.\d{2,})\s*°?\s*([EW])?/i))){
+  if((m=s.match(/(-?\d{1,2}(?:\.\d+)?)\s*°?\s*([NS])?\s*[,\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*°?\s*([EW])?/i))){
     let a=+m[1],b=+m[3]; if(/s/i.test(m[2]||""))a=-a; if(/w/i.test(m[4]||""))b=-b; return ok(a,b); }
   return null;
 }
 function renderPlaces(t){
-  const pins=t.pins||[], days=tripDays(t), sel=UI.day??"";
+  const pins=t.pins||[], days=tripDays(t), sel=UI.day??"", missing=pins.filter(p=>!hasLoc(p)).length;
   const chips=[["","All"],...days.map((d,i)=>[d,`Day ${i+1}`]),...(pins.some(p=>!p.day||!days.includes(p.day))?[["__none","Other"]]:[])];
   const list=pins.filter(p=>sel===""||(sel==="__none"?(!p.day||!days.includes(p.day)):p.day===sel))
     .sort((a,b)=>(a.day||"9").localeCompare(b.day||"9"));
@@ -711,19 +716,22 @@ function renderPlaces(t){
       <details ${pins.length?"":"open"}><summary style="font-weight:600;cursor:pointer;min-height:32px">Offline maps and navigation: how it works</summary>
       <p class="note" style="margin:8px 0 0">Install <b>Organic Maps</b> (free on the App Store) and, on Wi-Fi before you go, download the regions you need (the states or regions your trip covers). It then shows the map, your position and turn-by-turn directions with no signal. Each region you download stays on the phone, so you can keep many.</p>
       <p class="note" style="margin:0">Tap <b>Navigate</b> on a place to open it there, then tap "Route to". To load every place of this trip into Organic Maps as its own list, use <b>Send all to Organic Maps</b>.</p></details>
-      <button id="kmlBtn" ${pins.length?"":"disabled"}>Send all to Organic Maps (${pins.length} places)</button>
+      <button id="plImport" class="warm">Import places from Excel, CSV or KML</button>
+      ${missing?`<button id="plFindAll" class="primary">Find ${missing} missing location${missing===1?"":"s"} (needs internet)</button>`:""}
+      <button id="kmlBtn" ${pins.length-missing?"":"disabled"}>Send all to Organic Maps (${pins.length-missing} places)</button>
     </div>
     ${pins.length?`<div class="chips" role="toolbar" aria-label="Day">${chips.map(([k,l])=>`<button data-day="${esc(k)}" aria-pressed="${sel===k}">${esc(l)}</button>`).join("")}</div>`:""}
     ${list.length?`<div class="list">${list.map(p=>{ const hdr=p.day!==last?`<div class="daylabel">${esc(dayLabel(t,p.day))}</div>`:""; last=p.day;
       return hdr+`<div class="place"><div class="top"><div style="min-width:0"><div style="font-weight:600;overflow-wrap:anywhere">${esc(p.name)}</div>
-        <div class="m note"><span class="tag">${esc(p.type||"Sight")}</span>${esc(p.note||"")}</div></div>
+        <div class="m note"><span class="tag">${esc(p.type||"Sight")}</span>${esc(p.note||"")}</div>
+        ${!hasLoc(p)?`<div class="note" style="color:var(--bad)">No location yet</div>`:p.geo?`<div class="note">Matched: ${esc(p.geo)}. Check it's right; tap Edit to pick another.</div>`:""}</div>
         <button class="ghost" data-pedit="${esc(p.id)}" style="min-height:36px;padding:4px 8px">Edit</button></div>
-        <div class="acts"><button class="primary" data-om="${esc(p.id)}">Navigate</button><button data-gm="${esc(p.id)}">Google Maps</button></div></div>`; }).join("")}</div>`
-    :`<div class="card empty"><h3>${pins.length?"No places on this day":"No places yet"}</h3><p>Tap + Place to save hotels, sights and stops for this trip. They work offline.</p></div>`}`;
+        ${hasLoc(p)?`<div class="acts"><button class="primary" data-om="${esc(p.id)}">Navigate</button><button data-gm="${esc(p.id)}">Google Maps</button></div>`:`<div class="acts"><button class="warm" data-pedit="${esc(p.id)}">Add location</button><span></span></div>`}</div>`; }).join("")}</div>`
+    :`<div class="card empty"><h3>${pins.length?"No places on this day":"No places yet"}</h3><p>Import your plan from Excel (one row per place), or tap + Place. Saved places work offline.</p></div>`}`;
 }
 function openPlace(p){
-  const t=cur(); UI.editPlace=p||null; $("#placeTitle").textContent=p?"Edit place":"Add place"; $("#placeErr").textContent=""; $("#plMsg").textContent="";
-  $("#plName").value=p?.name||""; $("#plLoc").value=p?`${p.lat}, ${p.lng}`:""; $("#plType").value=p?.type||"Sight"; $("#plNote").value=p?.note||"";
+  const t=cur(); UI.editPlace=p||null; $("#placeTitle").textContent=p?"Edit place":"Add place"; $("#placeErr").textContent=""; $("#plMsg").textContent=""; $("#plFindMsg").textContent=""; UI.pickedGeo=null; $("#plResults").hidden=true; $("#plResults").innerHTML="";
+  $("#plName").value=p?.name||""; $("#plLoc").value=p&&hasLoc(p)?`${p.lat}, ${p.lng}`:""; $("#plType").value=p?.type||"Sight"; $("#plNote").value=p?.note||"";
   const days=tripDays(t);
   $("#plDay").innerHTML=`<option value="">Any day</option>`+days.map((d,i)=>`<option value="${d}">Day ${i+1} · ${shortDate(d)}</option>`).join("");
   $("#plDay").value=p?.day||(UI.day&&UI.day!=="__none"?UI.day:"");
@@ -739,16 +747,123 @@ $("#plHere").onclick=()=>{
 $("#placeForm").addEventListener("submit",ev=>{
   ev.preventDefault(); const t=cur(); const name=$("#plName").value.trim(); const c=parseCoords($("#plLoc").value);
   if(!name){$("#placeErr").textContent="Give the place a name.";return;}
-  if(!c){$("#placeErr").textContent="Couldn't read the location. Paste coordinates like 27.5098, 92.1009, or use where you are now.";return;}
-  const body={name,...c,day:$("#plDay").value||null,type:$("#plType").value,note:$("#plNote").value.trim()};
+  const raw=$("#plLoc").value.trim();
+  if(raw&&!c){$("#placeErr").textContent="Couldn't read the location. Use Find, paste coordinates like 27.5098, 92.1009, or leave it empty for now.";return;}
+  const prevLoc=UI.editPlace?`${UI.editPlace.lat}, ${UI.editPlace.lng}`:"";
+  const body={name,...(c||{lat:null,lng:null}),day:$("#plDay").value||null,type:$("#plType").value,note:$("#plNote").value.trim(),geo:(raw===prevLoc&&UI.editPlace?.geo)?UI.editPlace.geo:(UI.pickedGeo&&raw===UI.pickedGeo.loc?UI.pickedGeo.label:null)};
   t.pins=t.pins||[]; if(UI.editPlace) Object.assign(UI.editPlace,body); else t.pins.push({id:uid("pl_"),...body});
   save(); $("#placeDlg").close(); render(); toast("Place saved");
 });
 $("#placeDelete").onclick=()=>{ const b=$("#placeDelete"); if(!b.dataset.armed){b.dataset.armed="1";b.textContent="Tap again to delete";return;}
   const t=cur(); t.pins=(t.pins||[]).filter(x=>x!==UI.editPlace); save(); $("#placeDlg").close(); render(); toast("Place deleted"); };
+const hasLoc=p=>Number.isFinite(p.lat)&&Number.isFinite(p.lng)&&p.lat!==null;
+
+/* ---- look up a place by name (online, OpenStreetMap) ---- */
+function tripBox(t){ const pts=(t.pins||[]).filter(hasLoc); if(!pts.length) return "";
+  const la=pts.map(p=>p.lat), lo=pts.map(p=>p.lng), pad=1.5;
+  return `&viewbox=${Math.min(...lo)-pad},${Math.max(...la)+pad},${Math.max(...lo)+pad},${Math.min(...la)-pad}`; }
+async function geocode(q,t,limit=5){
+  const r=await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=0&limit=${limit}&accept-language=en&q=${encodeURIComponent(q)}${t?tripBox(t):""}`);
+  if(r.status===429) throw new Error("busy"); if(!r.ok) throw new Error("http");
+  return (await r.json()).map(x=>({lat:+(+x.lat).toFixed(6),lng:+(+x.lon).toFixed(6),label:x.display_name}));
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+$("#plFind").onclick=async()=>{
+  const name=$("#plName").value.trim(); if(!name){ $("#plFindMsg").textContent="Type the place name first."; return; }
+  if(!navigator.onLine){ $("#plFindMsg").textContent="You're offline. Save it without a location and find it later."; return; }
+  $("#plFindMsg").textContent="Searching…"; $("#plResults").hidden=true;
+  try{ let res=await geocode(name,cur()); if(!res.length&&name.includes(",")) res=await geocode(name.split(",")[0],cur());
+    if(!res.length){ $("#plFindMsg").textContent="No match. Add the town or district, e.g. \"Sela Lake, Tawang\"."; return; }
+    $("#plFindMsg").textContent=res.length>1?"Pick the right one:":"Found:";
+    $("#plResults").innerHTML=res.map((x,i)=>`<label><input type="radio" name="geoPick" value="${i}" ${i===0?"checked":""}> <span style="font-size:.85rem">${esc(x.label)}</span></label>`).join("");
+    $("#plResults").hidden=false;
+    const pick=i=>{ const x=res[i]; $("#plLoc").value=`${x.lat}, ${x.lng}`; UI.pickedGeo={loc:`${x.lat}, ${x.lng}`,label:x.label.split(",").slice(0,3).join(",")}; };
+    pick(0); $("#plResults").onchange=e=>pick(+e.target.value);
+  }catch(e){ $("#plFindMsg").textContent=e.message==="busy"?"The map search is busy. Wait a minute and try again.":"Couldn't search right now. Check your internet."; }
+};
+async function findMissing(t){
+  if(!navigator.onLine){ toast("You're offline. Connect to the internet to find locations."); return; }
+  const todo=(t.pins||[]).filter(p=>!hasLoc(p)); if(!todo.length) return;
+  let found=0,miss=[];
+  for(let i=0;i<todo.length;i++){
+    const p=todo[i]; toast(`Finding locations… ${i+1} of ${todo.length}`);
+    try{ const q=[p.name,p.area].filter(Boolean).join(", ");
+      let res=await geocode(q,t,1); if(!res.length&&p.area){ await sleep(1100); res=await geocode(p.name,t,1); }
+      if(res.length){ p.lat=res[0].lat; p.lng=res[0].lng; p.geo=res[0].label.split(",").slice(0,3).join(","); found++; } else miss.push(p.name);
+    }catch(e){ if(e.message==="busy"){ toast("The map search is busy. Try the rest in a minute."); break; } miss.push(p.name); }
+    save(); render(); await sleep(1100);
+  }
+  toast(`Found ${found} of ${todo.length}.${miss.length?` Not found: ${miss.slice(0,3).join(", ")}${miss.length>3?"…":""}. Tap Add location on those.`:" Check the matches."}`);
+}
+
+/* ---- import places from Excel / CSV / KML / GPX ---- */
+function loadXlsx(){ return window.XLSX?Promise.resolve():new Promise((ok,no)=>{ const s=document.createElement("script"); s.src="xlsx.mini.min.js"; s.onload=ok; s.onerror=()=>no(new Error("Couldn't load the Excel reader. Open the app once while online.")); document.head.append(s); }); }
+const HDR=[["lat",/^lat(itude)?\b/i],["lng",/^(lng|lon|long|longitude)\b/i],["coords",/coord|gps|lat.?\/?.?long|map|link|url/i],["day",/^(day|date)/i],["type",/^(type|category|kind)/i],
+  ["time",/^(time|start)/i],["area",/^(address|area|city|town|region|district|state|near)/i],["note",/^(note|remark|comment|description|detail|activit|plan|what to do)/i],["name",/^(place|name|stop|location|spot|destination|title|attraction|sight|visit|where)/i]];
+const TYPES=["Sight","Stay","Food","Fuel","Transport","Other"];
+function guessType(s){ s=(s||"").toLowerCase(); if(/hotel|stay|resort|homestay|cottage|lodge|night/.test(s))return"Stay"; if(/food|lunch|dinner|breakfast|cafe|restaurant|dhaba/.test(s))return"Food";
+  if(/fuel|petrol|diesel/.test(s))return"Fuel"; if(/airport|station|bus|flight|train|pickup|drop/.test(s))return"Transport"; return null; }
+function toDay(v,t){
+  const days=tripDays(t);
+  if(v instanceof Date&&!isNaN(v)){ const x=new Date(v.getTime()+12*3600e3); return `${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}`; }
+  const s=String(v??"").trim(); if(!s) return null; let m;
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  if((m=s.match(/^(?:day\s*)?(\d{1,2})$/i))||(m=s.match(/^day\s*(\d{1,2})\b/i))) return days[+m[1]-1]||null;
+  const full=findDate(s); if(full) return full;
+  if((m=s.match(/\b(\d{1,2})(?:st|nd|rd|th)?[\s\-]*(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)/i))&&t.start) return mkDate(t.start.slice(0,4),MONTHS[m[2].toLowerCase()],m[1]);
+  return null;
+}
+function rowsToPins(rows,t){
+  rows=rows.map(r=>r.map(c=>c instanceof Date?c:String(c??"").trim()));
+  const hi=rows.findIndex(r=>r.some(c=>typeof c==="string"&&HDR.some(([k,re])=>(k==="name"||k==="lat")&&re.test(c)))); if(hi<0) return [];
+  const head=rows[hi].map(c=>String(c)); const col={};
+  head.forEach((h,i)=>{ for(const [k,re] of HDR){ if(col[k]===undefined&&re.test(h)){ col[k]=i; break; } } });
+  if(col.name===undefined) return [];
+  const out=[]; let lastDay=null;
+  for(const r of rows.slice(hi+1)){
+    const g=k=>col[k]===undefined?"":r[col[k]]; const name=String(g("name")||"").trim();
+    const dv=g("day"); const d=dv!==""?toDay(dv,t):null; if(d) lastDay=d;
+    if(!name) continue;
+    let c=null; if(g("lat")!==""&&g("lng")!==""){ const a=parseFloat(g("lat")),b=parseFloat(g("lng")); if(Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a)<=90&&Math.abs(b)<=180) c={lat:+a.toFixed(6),lng:+b.toFixed(6)}; }
+    if(!c&&g("coords")) c=parseCoords(String(g("coords")));
+    if(!c) c=parseCoords(name)&&null;
+    const tp=String(g("type")||""); const type=TYPES.find(x=>x.toLowerCase()===tp.toLowerCase())||guessType(tp)||guessType(name)||"Sight";
+    const note=[g("time"),g("note")].map(x=>x instanceof Date?x.toTimeString().slice(0,5):String(x||"")).filter(Boolean).join(" · ");
+    out.push({name,area:String(g("area")||""),day:d||lastDay,type,note,...(c||{lat:null,lng:null})});
+  }
+  return out;
+}
+function kmlToPins(text){
+  const x=new DOMParser().parseFromString(text,"application/xml"); const out=[];
+  for(const pm of x.getElementsByTagName("Placemark")){ const c=pm.getElementsByTagName("coordinates")[0]?.textContent.trim().split(/\s+/)[0]; if(!c) continue;
+    const [lng,lat]=c.split(",").map(Number); out.push({name:pm.getElementsByTagName("name")[0]?.textContent.trim()||"Place",note:(pm.getElementsByTagName("description")[0]?.textContent||"").replace(/<[^>]+>/g," ").trim().slice(0,200),lat:+lat.toFixed(6),lng:+lng.toFixed(6),type:"Sight",day:null}); }
+  for(const w of [...x.getElementsByTagName("wpt"),...x.getElementsByTagName("rtept")]){ const lat=+w.getAttribute("lat"),lng=+w.getAttribute("lon");
+    out.push({name:w.getElementsByTagName("name")[0]?.textContent.trim()||"Place",note:w.getElementsByTagName("desc")[0]?.textContent.trim()||"",lat:+lat.toFixed(6),lng:+lng.toFixed(6),type:"Sight",day:null}); }
+  return out;
+}
+async function importPlaces(f){
+  const t=cur(); const n=f.name.toLowerCase(); let pins=[];
+  try{
+    if(/\.(kml|gpx)$/.test(n)) pins=kmlToPins(await f.text());
+    else if(/\.csv$/.test(n)) pins=rowsToPins(parseCsv(await f.text()),t);
+    else { await loadXlsx(); const wb=XLSX.read(await f.arrayBuffer(),{type:"array",cellDates:true});
+      for(const sn of wb.SheetNames){ const got=rowsToPins(XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:""}),t); if(got.length>pins.length) pins=got; } }
+  }catch(e){ toast(e.message&&e.message.startsWith("Couldn't")?e.message:"Couldn't read that file. Save it as .xlsx or .csv and try again."); return; }
+  if(!pins.length){ toast("No places found. Use one row per place with a column called Place (see the template)."); return; }
+  t.pins=t.pins||[]; let added=0,updated=0;
+  for(const p of pins){ const same=t.pins.find(q=>q.name.toLowerCase()===p.name.toLowerCase()&&(q.day||"")===(p.day||""));
+    if(same){ if(!hasLoc(same)&&hasLoc(p)){ Object.assign(same,{lat:p.lat,lng:p.lng}); updated++; } continue; }
+    t.pins.push({id:uid("pl_"),...p}); added++; }
+  save(); UI.day=""; render();
+  const missing=t.pins.filter(p=>!hasLoc(p)).length;
+  toast(`Added ${added} place${added===1?"":"s"}${updated?`, updated ${updated}`:""}.${missing?` ${missing} need a location.`:""}`);
+  if(missing&&navigator.onLine){ await sleep(1500); findMissing(t); }
+}
+$("#placesFile").onchange=ev=>{ const f=ev.target.files[0]; ev.target.value=""; if(f) importPlaces(f); };
+
 function exportKml(t){
   const x=s=>esc(s);
-  const pm=(t.pins||[]).map(p=>`<Placemark><name>${x(p.name)}</name><description>${x([dayLabel(t,p.day),p.type,p.note].filter(Boolean).join(" · "))}</description><Point><coordinates>${p.lng},${p.lat}</coordinates></Point></Placemark>`).join("\n");
+  const pm=(t.pins||[]).filter(hasLoc).map(p=>`<Placemark><name>${x(p.name)}</name><description>${x([dayLabel(t,p.day),p.type,p.note].filter(Boolean).join(" · "))}</description><Point><coordinates>${p.lng},${p.lat}</coordinates></Point></Placemark>`).join("\n");
   shareFile(`${slug(t.name)}.kml`,`<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${x(t.name)}</name>\n${pm}\n</Document></kml>`,"application/vnd.google-earth.kml+xml",true);
 }
 
