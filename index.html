@@ -710,7 +710,7 @@ function renderPlaces(t){
   const pins=t.pins||[], days=tripDays(t), sel=UI.day??"", missing=pins.filter(p=>!hasLoc(p)).length;
   const chips=[["","All"],...days.map((d,i)=>[d,`Day ${i+1}`]),...(pins.some(p=>!p.day||!days.includes(p.day))?[["__none","Other"]]:[])];
   const list=pins.filter(p=>sel===""||(sel==="__none"?(!p.day||!days.includes(p.day)):p.day===sel))
-    .sort((a,b)=>(a.day||"9").localeCompare(b.day||"9"));
+    .sort((a,b)=>(a.day||"9").localeCompare(b.day||"9")||(a.seq??999)-(b.seq??999));
   let last=null;
   return `<div class="card" style="display:flex;flex-direction:column;gap:8px">
       <details ${pins.length?"":"open"}><summary style="font-weight:600;cursor:pointer;min-height:32px">Offline maps and navigation: how it works</summary>
@@ -829,7 +829,7 @@ function rowsToPins(rows,t){
     if(!c) c=parseCoords(name)&&null;
     const tp=String(g("type")||""); const type=TYPES.find(x=>x.toLowerCase()===tp.toLowerCase())||guessType(tp)||guessType(name)||"Sight";
     const note=[g("time"),g("note")].map(x=>x instanceof Date?x.toTimeString().slice(0,5):String(x||"")).filter(Boolean).join(" · ");
-    out.push({name,area:String(g("area")||""),day:d||lastDay,type,note,...(c||{lat:null,lng:null})});
+    out.push({name,area:String(g("area")||""),day:d||lastDay,type,note,seq:out.length,...(c||{lat:null,lng:null})});
   }
   return out;
 }
@@ -852,7 +852,12 @@ async function importPlaces(f){
   if(!pins.length){ toast("No places found. Use one row per place with a column called Place (see the template)."); return; }
   t.pins=t.pins||[]; let added=0,updated=0;
   for(const p of pins){ const same=t.pins.find(q=>q.name.toLowerCase()===p.name.toLowerCase()&&(q.day||"")===(p.day||""));
-    if(same){ if(!hasLoc(same)&&hasLoc(p)){ Object.assign(same,{lat:p.lat,lng:p.lng}); updated++; } continue; }
+    if(same){ let ch=false; if(p.seq!==undefined) same.seq=p.seq;
+      if(hasLoc(p)&&(same.lat!==p.lat||same.lng!==p.lng)){ Object.assign(same,{lat:p.lat,lng:p.lng,geo:null}); ch=true; }
+      if(p.note&&p.note!==same.note){ same.note=p.note; ch=true; }
+      if(p.type&&p.type!==same.type){ same.type=p.type; ch=true; }
+      if(p.area&&p.area!==same.area){ same.area=p.area; }
+      if(ch) updated++; continue; }
     t.pins.push({id:uid("pl_"),...p}); added++; }
   save(); UI.day=""; render();
   const missing=t.pins.filter(p=>!hasLoc(p)).length;
