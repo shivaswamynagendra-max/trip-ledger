@@ -1,5 +1,5 @@
 // Trip Ledger offline cache. Bump VERSION when you upload a new index.html.
-const VERSION = "tripledger-v6";
+const VERSION = "tripledger-v7";
 const CORE = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png", "xlsx.mini.min.js"];
 // Bill reader (on-device text recognition and PDF). Cached in the background so it works offline.
 const EXTRA = ["ocr/tesseract.min.js", "ocr/worker.min.js", "ocr/core/tesseract-core-simd-lstm.wasm.js", "ocr/core/tesseract-core-lstm.wasm.js",

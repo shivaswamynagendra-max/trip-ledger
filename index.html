@@ -508,7 +508,9 @@ document.addEventListener("click",ev=>{
   if(b.dataset.gm){ const p=(cur().pins||[]).find(x=>x.id===b.dataset.gm); if(p) window.open(gmLink(p),"_blank"); return; }
   if(b.dataset.pedit){ openPlace((cur().pins||[]).find(x=>x.id===b.dataset.pedit)); return; }
   if(b.id==="kmlBtn"){ exportKml(cur()); return; }
-  if(b.id==="plImport"){ $("#placesFile").click(); return; }
+  if(b.id==="plImport"){ UI.replacePins=false; $("#placesFile").click(); return; }
+  if(b.id==="plReplace"){ if(!b.dataset.armed){ b.dataset.armed="1"; b.textContent=`Tap again: remove all ${(cur().pins||[]).length} places, then import a file`; return; }
+    UI.replacePins=true; $("#placesFile").click(); return; }
   if(b.id==="plFindAll"){ b.disabled=true; findMissing(cur()); return; }
   if(b.hasAttribute("data-close")){ b.closest("dialog").close(); return; }
   switch(b.id){
@@ -793,6 +795,7 @@ function renderPlaces(t){
       <p class="note" style="margin:8px 0 0">Install <b>Organic Maps</b> (free on the App Store) and, on Wi-Fi before you go, download the regions you need (the states or regions your trip covers). It then shows the map, your position and turn-by-turn directions with no signal. Each region you download stays on the phone, so you can keep many.</p>
       <p class="note" style="margin:0">Tap <b>Navigate</b> on a place to open it in Organic Maps, then tap "Route to". If Organic Maps isn't installed, Navigate opens its web page instead. To load every place of this trip into Organic Maps as its own list, use <b>Send all to Organic Maps</b>.</p></details>
       <button id="plImport" class="warm">Import places from Excel, CSV or KML</button>
+      ${pins.length?`<button id="plReplace">Replace all places with a new plan file</button>`:""}
       ${missing?`<button id="plFindAll" class="primary">Find ${missing} missing location${missing===1?"":"s"} (needs internet)</button>`:""}
       <button id="kmlBtn" ${pins.length-missing?"":"disabled"}>Send all to Organic Maps (${pins.length-missing} places)</button>
     </div>
@@ -926,6 +929,7 @@ async function importPlaces(f){
       for(const sn of wb.SheetNames){ const got=rowsToPins(XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:""}),t); if(got.length>pins.length) pins=got; } }
   }catch(e){ toast(e.message&&e.message.startsWith("Couldn't")?e.message:"Couldn't read that file. Save it as .xlsx or .csv and try again."); return; }
   if(!pins.length){ toast("No places found. Use one row per place with a column called Place (see the template)."); return; }
+  if(UI.replacePins){ t.pins=[]; UI.replacePins=false; }
   t.pins=t.pins||[]; let added=0,updated=0;
   for(const p of pins){ const same=t.pins.find(q=>q.name.toLowerCase()===p.name.toLowerCase()&&(q.day||"")===(p.day||""));
     if(same){ let ch=false; if(p.seq!==undefined) same.seq=p.seq;
